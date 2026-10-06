@@ -115,7 +115,7 @@ combatAdv:addTextInput("Target Name", function() return state.targetName end,
 combatAdv:addSlider("Prediction", 0, 1, function() return state.prediction end,
     function(v) state.prediction = v end, { step = 0.05 })
 combatAdv:addToggle("Silent Aim", function() return state.silentAim end, function(v) state.silentAim = v end)
-combat:addLabel("chips: key / mouse / Ctrl+Shift combos - ESC unbinds")
+combat:addLabel("chip: click=rebind ESC=unbind right-click=hold/toggle")
 hkParry.Active = state.autoParry
 UI.bind(hkParry, { mode = "toggle", onActive = function(a) state.autoParry = a; parryT.update() end })
 UI.bind(hkAim, { mode = "hold", onActive = function(a) state.aim = a; aimT.update() end })

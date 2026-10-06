@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.9.1-hud"
+HavocUI.VERSION = "v0.9.2-keys"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -169,7 +169,7 @@ function HavocUI.endDrag(fn)
     end
 end
 
--- pretty chip labels: "[P]", "[M2]", "[Ctrl+H]", "[-]" when unbound
+-- pretty chip labels: "[P]", "[M2]", "[Ctrl+H]", "[M2 hold]", "[-]" unbound
 local function keyLabel(entry)
     local key = entry and entry.Key
     if key == nil then return "[-]" end
@@ -188,6 +188,9 @@ local function keyLabel(entry)
         if mods.ctrl then name = "Ctrl+" .. name end
         if mods.shift then name = "Shift+" .. name end
         if mods.alt then name = "Alt+" .. name end
+    end
+    if (entry.Mode or "toggle") == "hold" then
+        name = name .. " hold"
     end
     return "[" .. name .. "]"
 end
@@ -828,6 +831,18 @@ function HavocUI.makeClickGui(opts)
                 return
             end
             HavocUI.beginRebind(entry, chip)
+        end)
+        -- right-click flips the activation mode: toggle <-> hold
+        chip.MouseButton2Click:Connect(function()
+            if opts2.locked then return end
+            if pendingRebind and pendingRebind.chip == chip then return end
+            entry.Mode = (entry.Mode or "toggle") == "hold" and "toggle" or "hold"
+            entry.Active = false
+            chip.Text = keyLabel(entry)
+            chip.TextColor3 = THEME.GRAY
+            toast(tostring(entry.Desc or "keybind") .. ": " .. entry.Mode .. " mode", { kind = "info" })
+            saveTouched()
+            if HOST.onKeybindChanged then pcall(HOST.onKeybindChanged, entry) end
         end)
         return chip
     end
@@ -2085,6 +2100,14 @@ function HavocUI.makeClickGui(opts)
         grp.getOpen = function() return grp.open end
         row.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                -- right-clicks over the keybind chip belong to the chip (mode flip)
+                if chip and chip.Parent then
+                    local cp, cs = chip.AbsolutePosition, chip.AbsoluteSize
+                    local p = input.Position
+                    if p.X >= cp.X and p.X <= cp.X + cs.X and p.Y >= cp.Y and p.Y <= cp.Y + cs.Y then
+                        return
+                    end
+                end
                 setOpen(not grp.open)
             end
         end)
