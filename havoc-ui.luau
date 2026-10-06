@@ -1556,7 +1556,7 @@ function HavocUI.makeWindow(opts)
         if not search then return end
         local q = string.lower(search.Text or "")
         for _, handle in ipairs(controls) do
-            local row = handle.row
+            local row = type(handle) == "table" and handle.row or nil
             if row and row.Parent then
                 if q == "" or handle.searchText == nil then
                     row.Visible = true

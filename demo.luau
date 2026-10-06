@@ -108,7 +108,7 @@ end, { step = 50, suffix = " studs" }))
 track(HavocUI.makeToggle(pv, "Names", function() return state.names end, function(v) state.names = v end))
 track(HavocUI.makeToggle(pv, "Distance", function() return state.distance end, function(v) state.distance = v end))
 track(HavocUI.makeToggle(pv, "Health Bars", function() return state.health end, function(v) state.health = v end))
-track(HavocUI.makeNote(pv, "Try the colour pickers - drag inside the square and the hue bar. Every control here is wired to live state."))
+HavocUI.makeNote(pv, "Try the colour pickers - drag inside the square and the hue bar. Every control here is wired to live state.")
 
 -- Player
 track(HavocUI.makeSectionHeader(pp, "Aimbot"))
@@ -132,7 +132,7 @@ end))
 track(HavocUI.makeButton(pm, "Unload Havoc UI", function()
     if genv.__HAVOC_UI_DEMO then genv.__HAVOC_UI_DEMO.destroy() end
 end, { style = "danger" }))
-track(HavocUI.makeNote(pm, "havoc-ui " .. HavocUI.VERSION .. " - frosted glass toolkit. Sandbox build; iterate freely."))
+HavocUI.makeNote(pm, "havoc-ui " .. HavocUI.VERSION .. " - frosted glass toolkit. Sandbox build; iterate freely.")
 
 win.setControls(controls)
 
