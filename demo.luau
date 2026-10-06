@@ -31,7 +31,6 @@ local state = {
     reach = 5,
     target = "Nearest",
     autoClicker = false,
-    cps = 75,
     reachLo = 8,
     reachHi = 16,
     targetName = "",
@@ -74,7 +73,6 @@ combat:addDropdown("Target Mode", { "Nearest", "Crosshair", "Mouse" }, function(
 end)
 combat:addToggle("Auto Clicker", function() return state.autoClicker end, function(v) state.autoClicker = v end)
 combat:addSection("timing")
-combat:addStepper("CPS Cap", 5, 200, 5, function() return state.cps end, function(v) state.cps = v end)
 combat:addProgress("Parry Cooldown", function() return (os.clock() % 3) / 3 end)
 combat:addRangeSlider("Reach Window", 5, 40, function() return state.reachLo, state.reachHi end,
     function(a, b) state.reachLo, state.reachHi = a, b end, { step = 1 })

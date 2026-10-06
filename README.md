@@ -77,7 +77,9 @@ empty categories shrink to their header, and clearing the box restores the
 previous expand/open state.
 
 Rows without keybinds: click toggles/expands. Keybind chips: click, then
-press a key (`Esc` cancels; `UI.init{ canBind }` can veto).
+press a key (`Esc` cancels; `UI.init{ canBind }` can veto). Sliders: drag
+to scrub; **shift-click (or right-click) opens a type-in box** for an exact
+value (`Enter` applies and snaps to the step, `Esc`/click-away cancels).
 
 ## Sandbox workflow
 

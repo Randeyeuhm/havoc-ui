@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.5-search"
+HavocUI.VERSION = "v0.5.1-search"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -441,8 +441,67 @@ function HavocUI.makeClickGui(opts)
         row.MouseLeave:Connect(function()
             tween(fill, 0.1, { BackgroundColor3 = THEME.FILL })
         end)
+        local editing = false
+        local editBox
+        local function closeEdit(apply)
+            if not editing then return end
+            editing = false
+            local txt = editBox and editBox.Text or ""
+            if editBox then
+                pcall(function() editBox:Destroy() end)
+                editBox = nil
+            end
+            value.Visible = true
+            if apply then
+                local n = tonumber(txt)
+                if n then
+                    local v = math.clamp(n, min, max)
+                    if step then
+                        v = min + math.floor((v - min) / step + 0.5) * step
+                        v = math.clamp(v, min, max)
+                    end
+                    setter(v)
+                    saveTouched()
+                end
+            end
+            refresh()
+        end
+        local function openEdit()
+            editing = true
+            value.Visible = false
+            editBox = create("TextBox", {
+                Size = UDim2.new(0.4, -6, 0, 16),
+                Position = UDim2.new(0.6, 0, 0, 2),
+                BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+                BackgroundTransparency = 0.3,
+                Text = string.format("%." .. tostring(decimals) .. "f", tonumber(getter()) or min),
+                TextColor3 = THEME.GOLD,
+                TextSize = 11,
+                Font = FONTS.MEDIUM,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                ClearTextOnFocus = false,
+                ZIndex = 64,
+                Parent = row,
+            })
+            box(editBox, THEME.GOLD, 0.3)
+            editBox:CaptureFocus()
+            editBox.FocusLost:Connect(function(enterPressed)
+                closeEdit(enterPressed == true)
+            end)
+        end
         row.InputBegan:Connect(function(input)
-            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            if editing then return end
+            local ut = input.UserInputType
+            if ut == Enum.UserInputType.MouseButton2 then
+                openEdit()
+                return
+            end
+            if ut ~= Enum.UserInputType.MouseButton1 then return end
+            local uis = game:GetService("UserInputService")
+            if uis:IsKeyDown(Enum.KeyCode.LeftShift) or uis:IsKeyDown(Enum.KeyCode.RightShift) then
+                openEdit()
+                return
+            end
             local function apply(mx)
                 local pos, size = row.AbsolutePosition, row.AbsoluteSize
                 local v = setFrac((mx - pos.X) / math.max(size.X, 1), true)
