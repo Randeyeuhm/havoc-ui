@@ -3,13 +3,14 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.5-search — sandbox iteration.** Design language: flat square
+**Status: v0.6-settings — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
 spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
 panel** with a live module **search box** and an `[x]` visibility switch
-for every category list, tight rows, ON = #55FF55 green / OFF = #AAAAAA
-gray, inline `[x]` checkboxes and vanilla-style sliders, chat-palette
-accents (gold #FFFF55, red #FF5555, aqua #55FFFF).
+for every category list, **right-click module settings drawers**, tight
+rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]` checkboxes and
+vanilla-style sliders, chat-palette accents (gold #FFFF55, red #FF5555,
+aqua #55FFFF).
 
 ## Layout
 
@@ -72,6 +73,12 @@ alpha strip and passes a second 0-255 argument to the setter),
 `addIndicator(text, get, { on, off })` (boolean or string, auto-repaints),
 and `addGroup(text, { open })` — an expandable sub-section that returns
 the same builder set (no nested groups).
+
+**Module settings drawers**: `addToggle(..., { settings = function(s) ...
+end })` puts a `[+]` marker on the row — **right-click the module** to
+collapse open its settings drawer underneath (same builder API inside, e.g.
+`s:addSlider(...)`); left-click still toggles the module. The handle also
+exposes `h.settings` (the builder) and `h.setSettingsOpen(v)`.
 
 The HAVOC HUB search box filters every category row live (case-insensitive
 substring): matching panels stay open, groups open when a child matches,

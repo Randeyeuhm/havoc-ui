@@ -46,9 +46,12 @@ local state = {
     boxAlpha = 255,
     chamsColor = Color3.fromRGB(255, 85, 85),
     fly = false,
+    flySpeed = 50,
+    flyVert = 30,
     speed = false,
     speedValue = 46,
     infJump = false,
+    jumpPower = 50,
     walkSpeed = 16,
     fullbright = false,
     noclip = false,
@@ -104,14 +107,30 @@ visuals:addMultiSelect("Parts", { "Head", "Body", "Torso", "Arms", "Legs" },
     function(it, on) state.parts[it] = on end)
 
 local player = gui.category("Player")
-player:addToggle("Fly", function() return state.fly end, function(v) state.fly = v end, hkFly)
+player:addToggle("Fly", function() return state.fly end, function(v) state.fly = v end, hkFly, {
+    settings = function(s)
+        s:addSlider("Fly Speed", 20, 200, function() return state.flySpeed end,
+            function(v) state.flySpeed = v end, { step = 5 })
+        s:addSlider("Vertical", 10, 100, function() return state.flyVert end,
+            function(v) state.flyVert = v end, { step = 5 })
+    end,
+})
 player:addKeybind(hkFly)
-player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end)
-player:addSlider("Speed Value", 10, 100, function() return state.speedValue end, function(v) state.speedValue = v end,
-    { step = 1 })
-player:addToggle("Infinite Jump", function() return state.infJump end, function(v) state.infJump = v end)
+player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end, nil, {
+    settings = function(s)
+        s:addSlider("Speed Value", 10, 100, function() return state.speedValue end,
+            function(v) state.speedValue = v end, { step = 1 })
+    end,
+})
+player:addToggle("Infinite Jump", function() return state.infJump end, function(v) state.infJump = v end, nil, {
+    settings = function(s)
+        s:addSlider("Jump Power", 30, 150, function() return state.jumpPower end,
+            function(v) state.jumpPower = v end, { step = 5 })
+    end,
+})
 player:addSlider("Walk Speed", 16, 200, function() return state.walkSpeed end, function(v) state.walkSpeed = v end,
     { step = 2 })
+player:addLabel("right-click a module for its settings")
 
 local movement = gui.category("Movement", { collapsed = true })
 movement:addToggle("Fullbright", function() return state.fullbright end, function(v) state.fullbright = v end)

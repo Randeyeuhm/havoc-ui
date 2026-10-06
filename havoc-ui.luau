@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.5.2-search"
+HavocUI.VERSION = "v0.6-settings"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -370,7 +370,7 @@ function HavocUI.makeClickGui(opts)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
         local name = label(row, text, 12, THEME.GRAY, {
-            Size = UDim2.new(1, hkEntry and 50 or 14, 1, 0),
+            Size = UDim2.new(1, (hkEntry and 50 or 14) + (opts2.settings and 16 or 0), 1, 0),
             Position = UDim2.fromOffset(6, 0),
             ZIndex = 62,
             Parent = row,
@@ -1433,12 +1433,16 @@ function HavocUI.makeClickGui(opts)
     end
 
     local addGroup -- forward declaration (groups use the builders, builders expose groups)
+    local makeSettingsDrawer -- forward declaration (toggle settings drawer)
 
     local function makeBuilders(cat, target, group)
         local b = {}
         b.addToggle = function(_, t, g, s, hk, o)
             local h = addToggle(target, t, g, s, hk, o)
             registerEntry(cat, t, h.row, group)
+            if o and o.settings then
+                h.settings = makeSettingsDrawer(cat, target, h.row, t, o, group, hk ~= nil)
+            end
             return h
         end
         b.addSlider = function(_, t, mn, mx, g, s, o)
@@ -1574,6 +1578,58 @@ function HavocUI.makeClickGui(opts)
         local builder = makeBuilders(cat, inner, grp)
         builder.setOpen = setOpen
         builder.isOpen = grp.getOpen
+        return builder
+    end
+
+    makeSettingsDrawer = function(cat, parent, row, name, o, group, hasChip)
+        local holder = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.55,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+        create("UIPadding", {
+            PaddingLeft = UDim.new(0, 8),
+            PaddingRight = UDim.new(0, 4),
+            PaddingTop = UDim.new(0, 3),
+            PaddingBottom = UDim.new(0, 4),
+            Parent = holder,
+        })
+        local marker = label(row, "[+]", 12, THEME.TEXT_DIM, {
+            Size = UDim2.fromOffset(16, 20),
+            Position = UDim2.new(1, hasChip and -58 or -22, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local grp = {
+            name = name, nameLower = string.lower(name), entries = {},
+            open = false, container = holder, isDrawer = true,
+        }
+        local function setOpen(v)
+            grp.open = v and true or false
+            holder.Visible = grp.open
+            marker.Text = grp.open and "[-]" or "[+]"
+            marker.TextColor3 = grp.open and THEME.AQUA or THEME.TEXT_DIM
+        end
+        grp.setOpen = setOpen
+        grp.getOpen = function() return grp.open end
+        row.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                setOpen(not grp.open)
+            end
+        end)
+        cat.entries[#cat.entries + 1] = { row = holder, name = grp.nameLower, grp = grp }
+        cat.groups[#cat.groups + 1] = grp
+        local builder = makeBuilders(cat, holder, grp)
+        builder.setOpen = setOpen
+        builder.isOpen = grp.getOpen
+        if o.settings then o.settings(builder) end
         return builder
     end
 
@@ -1740,7 +1796,9 @@ function HavocUI.makeClickGui(opts)
                     e.row.Visible = true
                 end
                 for _, gr in ipairs(cat.groups) do
-                    gr.container.Visible = true
+                    if not gr.isDrawer then
+                        gr.container.Visible = true
+                    end
                 end
                 if cat.snap then
                     cat.panelRef.setExpanded(cat.snap.expanded)
