@@ -3,13 +3,13 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.4-hub — sandbox iteration.** Design language: flat square
+**Status: v0.5-search — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
 spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
-panel** with an `[x]` visibility switch for every category list, tight
-rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]` checkboxes and
-vanilla-style sliders, chat-palette accents (gold #FFFF55, red #FF5555,
-aqua #55FFFF).
+panel** with a live module **search box** and an `[x]` visibility switch
+for every category list, tight rows, ON = #55FF55 green / OFF = #AAAAAA
+gray, inline `[x]` checkboxes and vanilla-style sliders, chat-palette
+accents (gold #FFFF55, red #FF5555, aqua #55FFFF).
 
 ## Layout
 
@@ -60,8 +60,21 @@ label): `addToggle(text, get, set, hkEntry?, opts)`,
 `addSlider(text, min, max, get, set, opts)`,
 `addDropdown(text, items, get, set)`,
 `addMultiSelect(text, items, isOn, setOn)`,
-`addColor(text, get, set)` (RGB slider trio),
-`addKeybind(entry, opts)`, `addButton(text, fn, opts)`, `addLabel(text)`.
+`addColor(text, get, set, { alpha = true })` (RGB or RGBA slider rows),
+`addKeybind(entry, { name })`, `addButton(text, fn, { style, confirm })`,
+`addLabel(text)`, `addSeparator()`, `addSection(text)`,
+`addStepper(text, min, max, step, get, set, opts)`,
+`addRangeSlider(text, min, max, get, set, { step })` (get/set take lo, hi),
+`addTextInput(text, get, set, { placeholder })`,
+`addProgress(text, get, { format })` (get returns 0..1, auto-repaints),
+`addIndicator(text, get, { on, off })` (boolean or string, auto-repaints),
+and `addGroup(text, { open })` — an expandable sub-section that returns
+the same builder set (no nested groups).
+
+The HAVOC HUB search box filters every category row live (case-insensitive
+substring): matching panels stay open, groups open when a child matches,
+empty categories shrink to their header, and clearing the box restores the
+previous expand/open state.
 
 Rows without keybinds: click toggles/expands. Keybind chips: click, then
 press a key (`Esc` cancels; `UI.init{ canBind }` can veto).

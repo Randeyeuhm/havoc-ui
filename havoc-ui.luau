@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.4-hub"
+HavocUI.VERSION = "v0.5-search"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -691,13 +691,18 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
-        local channels = { "R", "G", "B" }
-        local comps = { 255, 255, 255 }
+        local channels = opts2.alpha and { "R", "G", "B", "A" } or { "R", "G", "B" }
+        local comps = { 255, 255, 255, 255 }
         local channelRows = {}
         local function applyChannel()
             local c = Color3.fromRGB(comps[1], comps[2], comps[3])
-            setter(c)
+            if opts2.alpha then
+                setter(c, comps[4])
+            else
+                setter(c)
+            end
             swatch.BackgroundColor3 = c
+            swatch.BackgroundTransparency = opts2.alpha and (1 - comps[4] / 255) or 0
             value.Text = string.format("#%02X%02X%02X",
                 math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
             saveTouched()
@@ -753,14 +758,16 @@ function HavocUI.makeClickGui(opts)
             channelRows[#channelRows + 1] = { set = setChannel, fill = cfill, val = cval }
         end
         local function update()
-            local c = getter()
+            local c, a = getter()
             if typeof(c) ~= "Color3" then c = Color3.new(1, 1, 1) end
             comps = {
                 math.floor(c.R * 255 + 0.5),
                 math.floor(c.G * 255 + 0.5),
                 math.floor(c.B * 255 + 0.5),
+                math.clamp(math.floor((tonumber(a) or 255) + 0.5), 0, 255),
             }
             swatch.BackgroundColor3 = c
+            swatch.BackgroundTransparency = opts2.alpha and (1 - comps[4] / 255) or 0
             value.Text = string.format("#%02X%02X%02X", comps[1], comps[2], comps[3])
             for i, ref in ipairs(channelRows) do
                 ref.fill.Size = UDim2.new(comps[i] / 255, 0, 1, 0)
@@ -813,7 +820,40 @@ function HavocUI.makeClickGui(opts)
         row.MouseLeave:Connect(function()
             txt.TextColor3 = danger and THEME.RED or Color3.fromRGB(210, 210, 210)
         end)
+        local armed = false
+        local armToken = 0
+        local function setVisual(a)
+            if a then
+                txt.Text = "sure?"
+                txt.TextColor3 = THEME.WHITE
+                row.BackgroundColor3 = THEME.RED
+                row.BackgroundTransparency = 0.3
+            else
+                txt.Text = text
+                txt.TextColor3 = danger and THEME.RED or Color3.fromRGB(210, 210, 210)
+                row.BackgroundColor3 = THEME.BTN
+                row.BackgroundTransparency = THEME.BTN_T
+            end
+        end
         row.MouseButton1Click:Connect(function()
+            if opts2.confirm and not armed then
+                armed = true
+                armToken = armToken + 1
+                local tok = armToken
+                setVisual(true)
+                task.delay(opts2.confirmTime or 2, function()
+                    if armed and armToken == tok then
+                        armed = false
+                        setVisual(false)
+                    end
+                end)
+                return
+            end
+            if armed then
+                armed = false
+                armToken = armToken + 1
+            end
+            setVisual(false)
             if fn then pcall(fn) end
         end)
         return { row = row, update = function() end }
@@ -832,6 +872,504 @@ function HavocUI.makeClickGui(opts)
         })
         return l
     end
+
+    -- ---- shared ticker: read-only widgets repaint themselves ----
+    local tickers = {}
+    local tickerConn = nil
+    local tickerLast = 0
+    local function registerTick(fn)
+        tickers[#tickers + 1] = fn
+        if not tickerConn then
+            tickerConn = game:GetService("RunService").Heartbeat:Connect(function()
+                local now = os.clock()
+                if now - tickerLast < 0.05 then return end
+                tickerLast = now
+                for i = #tickers, 1, -1 do
+                    local ok = pcall(tickers[i])
+                    if not ok then table.remove(tickers, i) end
+                end
+            end)
+        end
+    end
+
+    local function addSeparator(parent)
+        local row = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 8),
+            BackgroundTransparency = 1,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        create("Frame", {
+            Size = UDim2.new(1, -8, 0, 1),
+            Position = UDim2.new(0, 4, 0.5, 0),
+            BackgroundColor3 = THEME.BORDER,
+            BackgroundTransparency = 0.35,
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = row,
+        })
+        return { row = row, update = function() end }
+    end
+
+    local function addSection(parent, text)
+        local row = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 18),
+            BackgroundTransparency = 1,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        label(row, text, 11, THEME.GOLD, {
+            Size = UDim2.new(1, -8, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            Font = FONTS.BOLD,
+            ZIndex = 62,
+            Parent = row,
+        })
+        return { row = row, update = function() end }
+    end
+
+    local function addProgress(parent, text, getter, opts2)
+        opts2 = opts2 or {}
+        local fmt = opts2.format or function(frac)
+            return string.format("%d%%", math.floor(frac * 100 + 0.5))
+        end
+        local row = makeRow(parent, 22)
+        label(row, text, 12, Color3.fromRGB(220, 220, 220), {
+            Size = UDim2.new(0.6, -6, 0, 14),
+            Position = UDim2.fromOffset(6, 2),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0.4, -6, 0, 14),
+            Position = UDim2.new(0.6, 0, 0, 2),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local track = create("Frame", {
+            Size = UDim2.new(1, -12, 0, 4),
+            Position = UDim2.new(0, 6, 1, -8),
+            BackgroundColor3 = THEME.TRACK,
+            BackgroundTransparency = 0.15,
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = row,
+        })
+        local fill = create("Frame", {
+            Size = UDim2.new(0, 0, 1, 0),
+            BackgroundColor3 = opts2.color or THEME.FILL,
+            BorderSizePixel = 0,
+            ZIndex = 62,
+            Parent = track,
+        })
+        local lastText
+        local function apply()
+            local frac = math.clamp(tonumber(getter()) or 0, 0, 1)
+            fill.Size = UDim2.new(frac, 0, 1, 0)
+            local t = fmt(frac)
+            if t ~= lastText then
+                value.Text = t
+                lastText = t
+            end
+        end
+        registerTick(apply)
+        apply()
+        return { row = row, update = apply }
+    end
+
+    local function addIndicator(parent, text, getter, opts2)
+        opts2 = opts2 or {}
+        local row = makeRow(parent, 20)
+        label(row, text, 12, THEME.GRAY, {
+            Size = UDim2.new(0.5, -6, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.AQUA, {
+            Size = UDim2.new(0.5, -10, 1, 0),
+            Position = UDim2.new(0.5, 0, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local lastText, lastCol
+        local function apply()
+            local v = getter()
+            local txt, col
+            if type(v) == "boolean" then
+                txt = v and (opts2.on or "ON") or (opts2.off or "OFF")
+                col = v and THEME.GREEN or THEME.TEXT_DIM
+            else
+                txt = tostring(v == nil and "-" or v)
+                col = opts2.color or THEME.AQUA
+            end
+            if txt ~= lastText or col ~= lastCol then
+                value.Text = txt
+                value.TextColor3 = col
+                lastText, lastCol = txt, col
+            end
+        end
+        registerTick(apply)
+        apply()
+        return { row = row, update = apply }
+    end
+
+    local function addTextInput(parent, text, getter, setter, opts2)
+        opts2 = opts2 or {}
+        local row = makeRow(parent, 20)
+        label(row, text, 12, THEME.GRAY, {
+            Size = UDim2.new(0.4, -6, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local input = create("TextBox", {
+            Size = UDim2.new(0.6, -4, 0, 16),
+            Position = UDim2.new(0.4, 0, 0, 2),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.4,
+            Text = "",
+            PlaceholderText = opts2.placeholder or "...",
+            PlaceholderColor3 = THEME.TEXT_DIM,
+            TextColor3 = THEME.WHITE,
+            TextSize = 11,
+            Font = FONTS.MEDIUM,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ClearTextOnFocus = false,
+            ZIndex = 62,
+            Parent = row,
+        })
+        box(input, THEME.BORDER, 0.4)
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 4)
+        pad.Parent = input
+        local function refresh()
+            if not input:IsFocused() then
+                input.Text = tostring(getter() or "")
+            end
+        end
+        input.FocusLost:Connect(function(enterPressed)
+            if enterPressed then
+                input:ReleaseFocus()
+            end
+            setter(input.Text)
+            saveTouched()
+            refresh()
+        end)
+        refresh()
+        return { row = row, update = refresh }
+    end
+
+    local function addStepper(parent, text, minVal, maxVal, step, getter, setter, opts2)
+        opts2 = opts2 or {}
+        step = tonumber(step) or 1
+        local decimals = opts2.decimals
+        if decimals == nil then decimals = step >= 1 and 0 or 1 end
+        local row = makeRow(parent, 20)
+        label(row, text, 12, Color3.fromRGB(220, 220, 220), {
+            Size = UDim2.new(1, -112, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0, 34, 1, 0),
+            Position = UDim2.new(1, -72, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local function mkBtn(sym, x)
+            local b = create("TextButton", {
+                Size = UDim2.fromOffset(16, 14),
+                Position = UDim2.new(1, x, 0, 3),
+                BackgroundColor3 = THEME.BTN,
+                BackgroundTransparency = THEME.BTN_T,
+                Text = sym,
+                TextColor3 = Color3.fromRGB(210, 210, 210),
+                TextSize = 12,
+                Font = FONTS.BOLD,
+                TextStrokeTransparency = THEME.SHADOW,
+                AutoButtonColor = false,
+                ZIndex = 62,
+                Parent = row,
+            })
+            box(b, THEME.BORDER, 0.4)
+            b.MouseEnter:Connect(function() b.TextColor3 = THEME.GREEN end)
+            b.MouseLeave:Connect(function() b.TextColor3 = Color3.fromRGB(210, 210, 210) end)
+            return b
+        end
+        local refresh
+        local function nudge(dir)
+            local cur = tonumber(getter()) or minVal
+            local nv = math.clamp(cur + dir * step, minVal, maxVal)
+            nv = minVal + math.floor((nv - minVal) / step + 0.5) * step
+            nv = math.clamp(nv, minVal, maxVal)
+            setter(nv)
+            refresh()
+            saveTouched()
+        end
+        mkBtn("-", -38).MouseButton1Click:Connect(function() nudge(-1) end)
+        mkBtn("+", -20).MouseButton1Click:Connect(function() nudge(1) end)
+        refresh = function()
+            value.Text = string.format("%." .. tostring(decimals) .. "f", tonumber(getter()) or minVal)
+        end
+        refresh()
+        return { row = row, update = refresh }
+    end
+
+    local function addRangeSlider(parent, text, minVal, maxVal, getter, setter, opts2)
+        opts2 = opts2 or {}
+        local step = tonumber(opts2.step) or ((maxVal - minVal) / 100)
+        local decimals = opts2.decimals
+        if decimals == nil then decimals = step >= 1 and 0 or 1 end
+        local row = makeRow(parent, 24)
+        label(row, text, 12, Color3.fromRGB(220, 220, 220), {
+            Size = UDim2.new(0.5, -6, 0, 14),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0.5, -6, 0, 14),
+            Position = UDim2.new(0.5, 0, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local bar = create("Frame", {
+            Size = UDim2.new(1, -12, 0, 8),
+            Position = UDim2.new(0, 6, 0, 15),
+            BackgroundColor3 = THEME.TRACK,
+            BackgroundTransparency = 0.15,
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = row,
+        })
+        box(bar, THEME.BORDER, 0.5)
+        local fill = create("Frame", {
+            Size = UDim2.new(0, 0, 1, 0),
+            BackgroundColor3 = THEME.FILL,
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = bar,
+        })
+        local capLo = create("Frame", {
+            Size = UDim2.fromOffset(2, 10),
+            BackgroundColor3 = THEME.GREEN,
+            BorderSizePixel = 0,
+            ZIndex = 62,
+            Parent = bar,
+        })
+        local capHi = create("Frame", {
+            Size = UDim2.fromOffset(2, 10),
+            BackgroundColor3 = THEME.GREEN,
+            BorderSizePixel = 0,
+            ZIndex = 62,
+            Parent = bar,
+        })
+        local lo, hi = minVal, maxVal
+        local function snap(v)
+            return math.clamp(minVal + math.floor((v - minVal) / step + 0.5) * step, minVal, maxVal)
+        end
+        local function paint()
+            local span = math.max(maxVal - minVal, 1e-9)
+            local f1, f2 = (lo - minVal) / span, (hi - minVal) / span
+            fill.Position = UDim2.new(f1, 0, 0, 0)
+            fill.Size = UDim2.new(math.max(f2 - f1, 0), 0, 1, 0)
+            capLo.Position = UDim2.new(f1, -1, 0.5, -5)
+            capHi.Position = UDim2.new(f2, -1, 0.5, -5)
+            value.Text = string.format("%." .. tostring(decimals) .. "f", lo) ..
+                " - " .. string.format("%." .. tostring(decimals) .. "f", hi)
+        end
+        local function refresh()
+            local a, b = getter()
+            lo, hi = snap(tonumber(a) or minVal), snap(tonumber(b) or maxVal)
+            if lo > hi then lo, hi = hi, lo end
+            paint()
+        end
+        bar.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local which = 0
+            local function apply(mx)
+                local pos, size = bar.AbsolutePosition, bar.AbsoluteSize
+                local frac = math.clamp((mx - pos.X) / math.max(size.X, 1), 0, 1)
+                local v = snap(minVal + frac * (maxVal - minVal))
+                if which == 0 then
+                    which = (math.abs(v - lo) <= math.abs(v - hi)) and 1 or 2
+                end
+                if which == 1 then
+                    lo = math.min(v, hi)
+                else
+                    hi = math.max(v, lo)
+                end
+                paint()
+                setter(lo, hi)
+            end
+            apply(input.Position.X)
+            HavocUI.startDrag(function(mx) apply(mx) end)
+        end)
+        refresh()
+        return { row = row, update = refresh }
+    end
+
+    -- ---- search registry --------------------------------------
+    local searchCats = {}
+    local function registerEntry(cat, entryName, rowObj, group)
+        local e = { row = rowObj, name = string.lower(tostring(entryName or "")), group = group }
+        cat.entries[#cat.entries + 1] = e
+        if group then group.entries[#group.entries + 1] = e end
+    end
+
+    local addGroup -- forward declaration (groups use the builders, builders expose groups)
+
+    local function makeBuilders(cat, target, group)
+        local b = {}
+        b.addToggle = function(_, t, g, s, hk, o)
+            local h = addToggle(target, t, g, s, hk, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addSlider = function(_, t, mn, mx, g, s, o)
+            local h = addSlider(target, t, mn, mx, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addDropdown = function(_, t, it, g, s, o)
+            local h = addDropdown(target, t, it, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addMultiSelect = function(_, t, it, g, s, o)
+            local h = addMultiSelect(target, t, it, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addColor = function(_, t, g, s, o)
+            local h = addColor(target, t, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addKeybind = function(_, e, o)
+            local h = addKeybind(target, e, o)
+            registerEntry(cat, (o and o.name) or (e and e.Desc) or "keybind", h.row, group)
+            return h
+        end
+        b.addButton = function(_, t, f, o)
+            local h = addButton(target, t, f, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addLabel = function(_, t)
+            local h = addLabel(target, t)
+            registerEntry(cat, t, h, group)
+            return h
+        end
+        b.addSeparator = function()
+            local h = addSeparator(target)
+            registerEntry(cat, "", h.row, group)
+            return h
+        end
+        b.addSection = function(_, t)
+            local h = addSection(target, t)
+            registerEntry(cat, "", h.row, group)
+            return h
+        end
+        b.addProgress = function(_, t, g, o)
+            local h = addProgress(target, t, g, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addIndicator = function(_, t, g, o)
+            local h = addIndicator(target, t, g, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addTextInput = function(_, t, g, s, o)
+            local h = addTextInput(target, t, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addStepper = function(_, t, mn, mx, st, g, s, o)
+            local h = addStepper(target, t, mn, mx, st, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        b.addRangeSlider = function(_, t, mn, mx, g, s, o)
+            local h = addRangeSlider(target, t, mn, mx, g, s, o)
+            registerEntry(cat, t, h.row, group)
+            return h
+        end
+        if not group then
+            b.addGroup = function(_, t, o) return addGroup(cat, target, t, o) end
+        end
+        return b
+    end
+
+    addGroup = function(cat, parent, text, opts2)
+        opts2 = opts2 or {}
+        local grp = { name = text, nameLower = string.lower(text), entries = {}, open = false }
+        local container = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 20),
+            BackgroundTransparency = 1,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        grp.container = container
+        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = container })
+        local header = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 20),
+            BackgroundColor3 = THEME.ROW_HOVER,
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = 0,
+            ZIndex = 61,
+            Parent = container,
+        })
+        local htxt = label(header, "", 12, THEME.GOLD, {
+            Size = UDim2.new(1, -10, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            Font = FONTS.MEDIUM,
+            ZIndex = 62,
+            Parent = header,
+        })
+        local inner = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            LayoutOrder = 1,
+            ZIndex = 61,
+            Parent = container,
+        })
+        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = inner })
+        create("UIPadding", { PaddingLeft = UDim.new(0, 8), Parent = inner })
+        local function setOpen(v)
+            grp.open = v and true or false
+            inner.Visible = grp.open
+            htxt.Text = (grp.open and "[-] " or "[+] ") .. tostring(text)
+        end
+        grp.setOpen = setOpen
+        grp.getOpen = function() return grp.open end
+        header.MouseEnter:Connect(function() tween(header, 0.1, { BackgroundTransparency = THEME.ROW_HOVER_T }) end)
+        header.MouseLeave:Connect(function() tween(header, 0.1, { BackgroundTransparency = 1 }) end)
+        header.MouseButton1Click:Connect(function() setOpen(not grp.open) end)
+        setOpen(opts2.open)
+        cat.entries[#cat.entries + 1] = { row = container, name = grp.nameLower, grp = grp }
+        cat.groups[#cat.groups + 1] = grp
+        local builder = makeBuilders(cat, inner, grp)
+        builder.setOpen = setOpen
+        builder.isOpen = grp.getOpen
+        return builder
+    end
+
 
     -- ========================================================
     -- PANEL FACTORY (main hub + every category)
@@ -949,11 +1487,90 @@ function HavocUI.makeClickGui(opts)
         return {
             panel = panel, header = header, items = items,
             setExpanded = setExpanded,
+            isExpanded = function() return expanded end,
         }
     end
 
     -- the little main hub: an [x] switch for every category list
     local mainRef = spawnPanel("HAVOC HUB", {}, 0)
+
+    -- live search: filters every registered category row in place
+    local function applySearch(raw)
+        local q = string.lower(raw or "")
+        local searching = q ~= ""
+        for _, cat in ipairs(searchCats) do
+            if searching then
+                if not cat.snap then
+                    cat.snap = { expanded = cat.panelRef.isExpanded(), groups = {} }
+                    for _, gr in ipairs(cat.groups) do
+                        cat.snap.groups[gr] = gr.getOpen()
+                    end
+                end
+                local matches = 0
+                for _, e in ipairs(cat.entries) do
+                    if not e.grp and not e.group then
+                        local m = string.find(e.name, q, 1, true) ~= nil
+                        e.row.Visible = m
+                        if m then matches = matches + 1 end
+                    end
+                end
+                for _, gr in ipairs(cat.groups) do
+                    local gm = string.find(gr.nameLower, q, 1, true) ~= nil
+                    local child = false
+                    for _, e in ipairs(gr.entries) do
+                        local m = gm or (string.find(e.name, q, 1, true) ~= nil)
+                        e.row.Visible = m
+                        if m then child = true end
+                    end
+                    local show = gm or child
+                    gr.container.Visible = show
+                    gr.setOpen(show)
+                    if show then matches = matches + 1 end
+                end
+                if matches > 0 then cat.panelRef.setExpanded(true) end
+            else
+                for _, e in ipairs(cat.entries) do
+                    e.row.Visible = true
+                end
+                for _, gr in ipairs(cat.groups) do
+                    gr.container.Visible = true
+                end
+                if cat.snap then
+                    cat.panelRef.setExpanded(cat.snap.expanded)
+                    for _, gr in ipairs(cat.groups) do
+                        gr.setOpen(cat.snap.groups[gr])
+                    end
+                    cat.snap = nil
+                end
+            end
+        end
+    end
+
+    local searchBox = create("TextBox", {
+        Size = UDim2.new(1, 0, 0, 20),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.4,
+        Text = "",
+        PlaceholderText = "search modules...",
+        PlaceholderColor3 = THEME.TEXT_DIM,
+        TextColor3 = THEME.WHITE,
+        TextSize = 11,
+        Font = FONTS.MEDIUM,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false,
+        LayoutOrder = nextOrder(),
+        ZIndex = 61,
+        Parent = mainRef.items,
+    })
+    box(searchBox, THEME.BORDER, 0.4)
+    local searchPad = Instance.new("UIPadding")
+    searchPad.PaddingLeft = UDim.new(0, 4)
+    searchPad.Parent = searchBox
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        applySearch(searchBox.Text)
+    end)
+    addLabel(mainRef.items, "havoc-ui " .. tostring(HavocUI.VERSION))
+
     local function addVisibilityRow(catName, catPanel)
         local row = create("TextButton", {
             Size = UDim2.new(1, 0, 0, 20),
@@ -993,20 +1610,14 @@ function HavocUI.makeClickGui(opts)
         index = index + 1
         local ref = spawnPanel(name, opts2, index)
         addVisibilityRow(name, ref.panel)
-        local cat = {}
-        cat.panel = ref.panel
-        cat.header = ref.header
-        cat.items = ref.items
-        cat.setExpanded = ref.setExpanded
-        cat.addToggle      = function(_, t, g, s, hk, o) return addToggle(ref.items, t, g, s, hk, o) end
-        cat.addSlider      = function(_, t, mn, mx, g, s, o) return addSlider(ref.items, t, mn, mx, g, s, o) end
-        cat.addDropdown    = function(_, t, it, g, s, o) return addDropdown(ref.items, t, it, g, s, o) end
-        cat.addMultiSelect = function(_, t, it, g, s, o) return addMultiSelect(ref.items, t, it, g, s, o) end
-        cat.addColor       = function(_, t, g, s, o) return addColor(ref.items, t, g, s, o) end
-        cat.addKeybind     = function(_, e, o) return addKeybind(ref.items, e, o) end
-        cat.addButton      = function(_, t, f, o) return addButton(ref.items, t, f, o) end
-        cat.addLabel       = function(_, t) return addLabel(ref.items, t) end
-        return cat
+        local cat = { panelRef = ref, entries = {}, groups = {} }
+        searchCats[#searchCats + 1] = cat
+        local api = makeBuilders(cat, ref.items, nil)
+        api.panel = ref.panel
+        api.header = ref.header
+        api.items = ref.items
+        api.setExpanded = ref.setExpanded
+        return api
     end
 
     -- manager handle (all panels act as one menu)
@@ -1030,6 +1641,12 @@ function HavocUI.makeClickGui(opts)
         return first ~= nil and first.panel.Visible
     end
     W.destroy = function()
+        if tickerConn then
+            pcall(function() tickerConn:Disconnect() end)
+            tickerConn = nil
+        end
+        table.clear(tickers)
+        table.clear(searchCats)
         for _, ref in ipairs(panelRefs) do
             pcall(function() ref.panel:Destroy() end)
         end

@@ -1,4 +1,4 @@
--- havoc-ui sandbox demo (v0.2-block): Minecraft-style cheat menu showcase.
+-- havoc-ui sandbox demo: Minecraft-style cheat menu showcase.
 -- Load via the bridge:  loadstring(readfile('havoc-ui-demo.luau'), '@havoc-ui-demo')()
 -- Re-runnable: destroys the previous instance first.
 
@@ -31,6 +31,12 @@ local state = {
     reach = 5,
     target = "Nearest",
     autoClicker = false,
+    cps = 75,
+    reachLo = 8,
+    reachHi = 16,
+    targetName = "",
+    silentAim = false,
+    prediction = 0.15,
     box = true,
     names = true,
     chams = false,
@@ -38,6 +44,7 @@ local state = {
     boxStyle = "Full",
     parts = { Head = true, Body = true, Torso = false, Arms = false, Legs = false },
     boxColor = Color3.fromRGB(85, 255, 85),
+    boxAlpha = 255,
     chamsColor = Color3.fromRGB(255, 85, 85),
     fly = false,
     speed = false,
@@ -66,13 +73,28 @@ combat:addDropdown("Target Mode", { "Nearest", "Crosshair", "Mouse" }, function(
     state.target = v
 end)
 combat:addToggle("Auto Clicker", function() return state.autoClicker end, function(v) state.autoClicker = v end)
+combat:addSection("timing")
+combat:addStepper("CPS Cap", 5, 200, 5, function() return state.cps end, function(v) state.cps = v end)
+combat:addProgress("Parry Cooldown", function() return (os.clock() % 3) / 3 end)
+combat:addRangeSlider("Reach Window", 5, 40, function() return state.reachLo, state.reachHi end,
+    function(a, b) state.reachLo, state.reachHi = a, b end, { step = 1 })
+local combatAdv = combat:addGroup("Advanced")
+combatAdv:addTextInput("Target Name", function() return state.targetName end,
+    function(v) state.targetName = v end, { placeholder = "player..." })
+combatAdv:addSlider("Prediction", 0, 1, function() return state.prediction end,
+    function(v) state.prediction = v end, { step = 0.05 })
+combatAdv:addToggle("Silent Aim", function() return state.silentAim end, function(v) state.silentAim = v end)
 combat:addLabel("Green = ON  -  gold = value  -  [+] expands")
 
 local visuals = gui.category("Visuals")
 visuals:addToggle("Box ESP", function() return state.box end, function(v) state.box = v end)
 visuals:addToggle("Names", function() return state.names end, function(v) state.names = v end)
 visuals:addToggle("Chams", function() return state.chams end, function(v) state.chams = v end, hkChams)
-visuals:addColor("Box Color", function() return state.boxColor end, function(c) state.boxColor = c end)
+visuals:addIndicator("ESP Engine", function() return state.box or state.names or state.chams end,
+    { on = "running", off = "idle" })
+visuals:addSeparator()
+visuals:addColor("Box Color", function() return state.boxColor, state.boxAlpha end,
+    function(c, a) state.boxColor = c; state.boxAlpha = a end, { alpha = true })
 visuals:addColor("Chams Color", function() return state.chamsColor end, function(c) state.chamsColor = c end)
 visuals:addSlider("Max Distance", 100, 5000, function() return state.maxDist end, function(v) state.maxDist = v end,
     { step = 50, suffix = "m" })
@@ -99,6 +121,9 @@ movement:addToggle("Noclip", function() return state.noclip end, function(v) sta
 movement:addToggle("Bunny Hop", function() return state.bunnyhop end, function(v) state.bunnyhop = v end)
 
 local misc = gui.category("Misc", { collapsed = true })
+misc:addButton("Reset States", function()
+    toaster("states reset", { kind = "warn" })
+end, { confirm = true })
 misc:addButton("Test Notification", function()
     toaster("Everything is wired and live", { kind = "ok" })
 end)
@@ -110,9 +135,11 @@ misc:addButton("Unload", function()
 end, { style = "danger" })
 
 local inputHandle = UI.attachInput()
+local UIS = game:GetService("UserInputService")
 local conns = {}
-table.insert(conns, game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
+table.insert(conns, UIS.InputBegan:Connect(function(input, gpe)
     if gpe then return end
+    if UIS:GetFocusedTextBox() then return end
     if UI.handleRebindInput(input) then return end
     if input.KeyCode == Enum.KeyCode.RightShift then
         gui.toggle()
@@ -133,5 +160,5 @@ genv.__HAVOC_UI_DEMO = {
     end,
 }
 
-toaster("Havoc UI " .. UI.VERSION .. " - drag headers, click to expand", { kind = "ok" })
+toaster("Havoc UI " .. UI.VERSION .. " - hub has search, drag headers to move", { kind = "ok" })
 print("[havoc-ui] demo loaded " .. UI.VERSION)
