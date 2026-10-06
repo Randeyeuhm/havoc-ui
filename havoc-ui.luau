@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.9-hud"
+HavocUI.VERSION = "v0.9.1-hud"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -1587,17 +1587,27 @@ function HavocUI.makeClickGui(opts)
 
     local function addSection(parent, text)
         local row = create("Frame", {
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, 20),
             BackgroundTransparency = 1,
             LayoutOrder = nextOrder(),
             ZIndex = 61,
             Parent = parent,
         })
         label(row, text, 11, THEME.GOLD, {
-            Size = UDim2.new(1, -8, 1, 0),
-            Position = UDim2.fromOffset(6, 0),
+            Size = UDim2.new(1, -10, 0, 15),
+            Position = UDim2.fromOffset(5, 0),
             Font = FONTS.BOLD,
             ZIndex = 62,
+            Parent = row,
+        })
+        -- divider bar under the caption
+        create("Frame", {
+            Size = UDim2.new(1, -10, 0, 1),
+            Position = UDim2.new(0, 5, 1, -3),
+            BackgroundColor3 = THEME.BORDER,
+            BackgroundTransparency = 0.25,
+            BorderSizePixel = 0,
+            ZIndex = 61,
             Parent = row,
         })
         return { row = row, update = function() end }
