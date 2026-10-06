@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.8-config"
+HavocUI.VERSION = "v0.9-hud"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -268,6 +268,31 @@ function HavocUI.refreshAll()
     HavocUI.refreshKeybinds()
 end
 
+function HavocUI.addRefresh(fn)
+    if type(fn) == "function" then
+        refreshables[#refreshables + 1] = fn
+    end
+end
+
+-- shared ticker: read-only widgets repaint themselves (progress, HUD...)
+local tickers = {}
+local tickerConn = nil
+local tickerLast = 0
+local function registerTick(fn)
+    tickers[#tickers + 1] = fn
+    if not tickerConn then
+        tickerConn = game:GetService("RunService").Heartbeat:Connect(function()
+            local now = os.clock()
+            if now - tickerLast < 0.05 then return end
+            tickerLast = now
+            for i = #tickers, 1, -1 do
+                local ok = pcall(tickers[i])
+                if not ok then table.remove(tickers, i) end
+            end
+        end)
+    end
+end
+
 function HavocUI.attachInput()
     local conns = {}
     table.insert(conns, UserInputService.InputChanged:Connect(function(input)
@@ -487,6 +512,210 @@ function HavocUI.makeToaster(parent)
 end
 
 -- ============================================================
+-- HUD (watermark + arraylist + keybind list)
+-- ============================================================
+function HavocUI.makeHud(parent, opts)
+    opts = opts or {}
+    registerThemeRoot(parent)
+    local hud = {
+        modules = {},
+        flags = {
+            watermark = opts.watermark ~= false,
+            array = opts.array ~= false,
+            keys = opts.keys == true,
+        },
+    }
+
+    local wm = create("Frame", {
+        Name = "HavocHudWatermark",
+        AutomaticSize = Enum.AutomaticSize.X,
+        Size = UDim2.new(0, 0, 0, 18),
+        Position = UDim2.fromOffset(8, 8),
+        BackgroundColor3 = THEME.BG,
+        BackgroundTransparency = 0.15,
+        BorderSizePixel = 0,
+        Visible = hud.flags.watermark,
+        ZIndex = 200,
+        Parent = parent,
+    })
+    box(wm, THEME.BORDER, 0.4)
+    local wmPad = Instance.new("UIPadding")
+    wmPad.PaddingLeft = UDim.new(0, 6)
+    wmPad.PaddingRight = UDim.new(0, 6)
+    wmPad.Parent = wm
+    local wmLabel = label(wm, "", 12, THEME.GREEN, {
+        Size = UDim2.new(1, 0, 1, 0),
+        Font = FONTS.BOLD,
+        ZIndex = 201,
+        Parent = wm,
+    })
+
+    local arrayHolder = create("Frame", {
+        Name = "HavocHudArray",
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -8, 0, 8),
+        Size = UDim2.new(0, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.XY,
+        BackgroundTransparency = 1,
+        ZIndex = 200,
+        Parent = parent,
+    })
+    create("UIListLayout", {
+        Padding = UDim.new(0, 1),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        Parent = arrayHolder,
+    })
+
+    local keyHolder = create("Frame", {
+        Name = "HavocHudKeys",
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 8, 1, -8),
+        Size = UDim2.new(0, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.XY,
+        BackgroundTransparency = 1,
+        ZIndex = 200,
+        Parent = parent,
+    })
+    create("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = keyHolder })
+
+    local function ensureRow(store, holder, key)
+        local r = store[key]
+        if not r then
+            local frame = create("Frame", {
+                Size = UDim2.new(0, 0, 0, 16),
+                AutomaticSize = Enum.AutomaticSize.X,
+                BackgroundColor3 = THEME.BG,
+                BackgroundTransparency = 0.2,
+                BorderSizePixel = 0,
+                Visible = false,
+                ZIndex = 200,
+                Parent = holder,
+            })
+            box(frame, THEME.BORDER, 0.5)
+            local pad = Instance.new("UIPadding")
+            pad.PaddingLeft = UDim.new(0, 5)
+            pad.PaddingRight = UDim.new(0, 5)
+            pad.Parent = frame
+            r = {
+                frame = frame,
+                label = label(frame, key, 11, THEME.GREEN, {
+                    Size = UDim2.new(1, 0, 1, 0),
+                    Font = FONTS.MEDIUM,
+                    ZIndex = 201,
+                    Parent = frame,
+                }),
+            }
+            store[key] = r
+        end
+        return r
+    end
+
+    local arrayRows = {}
+    local function updateArray()
+        if not hud.flags.array then
+            for _, r in pairs(arrayRows) do r.frame.Visible = false end
+            return
+        end
+        local active = {}
+        for _, m in ipairs(hud.modules) do
+            local ok, on = pcall(m.get)
+            if ok and on then active[#active + 1] = m.name end
+        end
+        table.sort(active, function(a, b)
+            if #a ~= #b then return #a > #b end
+            return a < b
+        end)
+        local seen = {}
+        for i, name in ipairs(active) do
+            local r = ensureRow(arrayRows, arrayHolder, name)
+            r.frame.Visible = true
+            r.frame.LayoutOrder = i
+            if r.label.Text ~= name then r.label.Text = name end
+            seen[name] = true
+        end
+        for name, r in pairs(arrayRows) do
+            if not seen[name] then r.frame.Visible = false end
+        end
+    end
+
+    local keyRows = {}
+    local function updateKeys()
+        local want = {}
+        if hud.flags.keys then
+            for entry in pairs(chipRefs) do
+                if entry.Desc and entry.Key ~= nil then
+                    want[#want + 1] = {
+                        txt = keyLabel(entry) .. " " .. tostring(entry.Desc),
+                        on = entry.Enabled ~= false,
+                    }
+                end
+            end
+        end
+        table.sort(want, function(a, b) return a.txt < b.txt end)
+        local seen = {}
+        for i, w in ipairs(want) do
+            local r = ensureRow(keyRows, keyHolder, w.txt)
+            r.frame.Visible = true
+            r.frame.LayoutOrder = i
+            if r.label.Text ~= w.txt then r.label.Text = w.txt end
+            local col = w.on and THEME.GRAY or THEME.TEXT_DIM
+            if r.label.TextColor3 ~= col then r.label.TextColor3 = col end
+            seen[w.txt] = true
+        end
+        for txt, r in pairs(keyRows) do
+            if not seen[txt] then r.frame.Visible = false end
+        end
+    end
+
+    local fpsSmooth = 60
+    local fpsConn = game:GetService("RunService").RenderStepped:Connect(function(dt)
+        if type(dt) == "number" and dt > 0 then
+            fpsSmooth = fpsSmooth * 0.92 + (1 / dt) * 0.08
+        end
+    end)
+    local lastWm
+    registerTick(function()
+        if not hud.flags.watermark then
+            if wm.Visible then wm.Visible = false end
+            return
+        end
+        if not wm.Visible then wm.Visible = true end
+        local txt = "HAVOC HUB " .. tostring(HavocUI.VERSION) .. "  |  " .. tostring(math.floor(fpsSmooth + 0.5)) .. " FPS"
+        if txt ~= lastWm then
+            wmLabel.Text = txt
+            lastWm = txt
+        end
+    end)
+    registerTick(updateArray)
+    registerTick(updateKeys)
+
+    function hud:addModule(name, getter)
+        self.modules[#self.modules + 1] = { name = tostring(name), get = getter }
+        return self
+    end
+    function hud:setWatermark(on)
+        self.flags.watermark = on and true or false
+        return self
+    end
+    function hud:setArrayList(on)
+        self.flags.array = on and true or false
+        return self
+    end
+    function hud:setKeybinds(on)
+        self.flags.keys = on and true or false
+        return self
+    end
+    function hud:destroy()
+        pcall(function() fpsConn:Disconnect() end)
+        pcall(function() wm:Destroy() end)
+        pcall(function() arrayHolder:Destroy() end)
+        pcall(function() keyHolder:Destroy() end)
+    end
+    return hud
+end
+
+-- ============================================================
 -- CLICK GUI
 -- ============================================================
 function HavocUI.makeClickGui(opts)
@@ -519,7 +748,7 @@ function HavocUI.makeClickGui(opts)
 
     -- UIScale grows a panel around its top-left corner, so slots must be
     -- spaced in SCALED units or neighbouring panels overlap
-    local slotStep = (width + gap) * scale
+    local curScale = scale
 
     -- an expanded list must never run off the bottom of the screen
     if vpY > 0 then
@@ -1336,24 +1565,6 @@ function HavocUI.makeClickGui(opts)
     end
 
     -- ---- shared ticker: read-only widgets repaint themselves ----
-    local tickers = {}
-    local tickerConn = nil
-    local tickerLast = 0
-    local function registerTick(fn)
-        tickers[#tickers + 1] = fn
-        if not tickerConn then
-            tickerConn = game:GetService("RunService").Heartbeat:Connect(function()
-                local now = os.clock()
-                if now - tickerLast < 0.05 then return end
-                tickerLast = now
-                for i = #tickers, 1, -1 do
-                    local ok = pcall(tickers[i])
-                    if not ok then table.remove(tickers, i) end
-                end
-            end)
-        end
-    end
-
     local function addSeparator(parent)
         local row = create("Frame", {
             Size = UDim2.new(1, 0, 0, 8),
@@ -1882,9 +2093,9 @@ function HavocUI.makeClickGui(opts)
     -- ========================================================
     local function slotPosition(slot)
         if layout == "column" then
-            return startX, startY + slot * 24 * scale
+            return startX, startY + slot * 24 * curScale
         end
-        return startX + slot * slotStep, startY
+        return startX + slot * (width + gap) * curScale, startY
     end
 
     local function spawnPanel(name, opts2, slot)
@@ -2135,8 +2346,17 @@ function HavocUI.makeClickGui(opts)
     -- manager handle (all panels act as one menu)
     W.setScale = function(s)
         local v = math.clamp(tonumber(s) or 1, 0.6, 1.6)
+        curScale = v
         for _, ref in ipairs(panelRefs) do
             ref.uiScale.Scale = v
+        end
+    end
+    W.getScale = function() return curScale end
+    -- re-seat every panel on its slot (use after setScale so nothing overlaps)
+    W.relayout = function()
+        for i, p in ipairs(W.panels) do
+            local px, py = slotPosition(i - 1)
+            p.Position = UDim2.fromOffset(px, py)
         end
     end
     W.show = function()

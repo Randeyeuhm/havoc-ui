@@ -61,6 +61,9 @@ local function defaultState()
         themePreset = "Minecraft",
         configName = "default",
         configSel = "",
+        hudWatermark = true,
+        hudArray = true,
+        hudKeys = false,
     }
 end
 local state = defaultState()
@@ -78,6 +81,19 @@ local gui = UI.makeClickGui{
 }
 
 local cfg = UI.makeConfig{ name = "demo", folder = "havoc-ui/configs" }
+
+local hud = UI.makeHud(screenGui)
+for name, key in pairs({
+    ["Auto Parry"] = "autoParry", ["Aim Assist"] = "aim", ["Auto Clicker"] = "autoClicker",
+    ["Box ESP"] = "box", ["Names"] = "names", ["Chams"] = "chams",
+    ["Fly"] = "fly", ["Speed"] = "speed", ["Infinite Jump"] = "infJump",
+    ["Fullbright"] = "fullbright", ["Noclip"] = "noclip", ["Bunny Hop"] = "bunnyhop",
+}) do
+    hud:addModule(name, function() return state[key] end)
+end
+hud:setWatermark(state.hudWatermark)
+hud:setArrayList(state.hudArray)
+hud:setKeybinds(state.hudKeys)
 
 local combat = gui.category("Combat")
 local parryT = combat:addToggle("Auto Parry", function() return state.autoParry end,
@@ -258,6 +274,20 @@ themePicker(colors2, "Slider Fill", "FILL")
 themePicker(colors2, "Row Hover", "ROW_HOVER")
 themePicker(colors2, "Dim Text", "TEXT_DIM")
 
+cfgTab:addSection("hud")
+cfgTab:addToggle("Watermark", function() return state.hudWatermark end,
+    function(v) state.hudWatermark = v; hud:setWatermark(v) end)
+cfgTab:addToggle("ArrayList", function() return state.hudArray end,
+    function(v) state.hudArray = v; hud:setArrayList(v) end)
+cfgTab:addToggle("Keybind List", function() return state.hudKeys end,
+    function(v) state.hudKeys = v; hud:setKeybinds(v) end)
+cfgTab:addSlider("UI Scale", 0.8, 1.4, function() return state.uiScale or gui.getScale() end,
+    function(v)
+        state.uiScale = v
+        gui.setScale(v)
+        gui.relayout()
+    end, { step = 0.05, decimals = 2 })
+
 cfgTab:addSection("configs")
 cfgTab:addTextInput("Config Name", function() return state.configName end,
     function(v) state.configName = v end, { placeholder = "name..." })
@@ -298,6 +328,8 @@ do
         ["Jump Power"] = "jumpPower", ["Walk Speed"] = "walkSpeed",
         ["Fullbright"] = "fullbright", ["Noclip"] = "noclip", ["Bunny Hop"] = "bunnyhop",
         ["Reach Window Lo"] = "reachLo", ["Reach Window Hi"] = "reachHi",
+        ["Watermark"] = "hudWatermark", ["ArrayList"] = "hudArray",
+        ["Keybind List"] = "hudKeys", ["UI Scale"] = "uiScale",
     }
     for id, key in pairs(TRACK) do
         cfg:track(id, function() return state[key] end, function(v) state[key] = v end)
@@ -307,6 +339,17 @@ do
     end
     cfg:trackTheme()
 end
+
+-- hud + scale follow every config load (and the autosave below)
+UI.addRefresh(function()
+    hud:setWatermark(state.hudWatermark)
+    hud:setArrayList(state.hudArray)
+    hud:setKeybinds(state.hudKeys)
+    if state.uiScale then
+        gui.setScale(state.uiScale)
+        gui.relayout()
+    end
+end)
 
 -- reload-in-place: bring back modules + keybinds + theme from the autosave
 if cfg:exists("__autosave") then
@@ -339,6 +382,7 @@ genv.__HAVOC_UI_DEMO = {
     ui = UI,
     state = state,
     cfg = cfg,
+    hud = hud,
     keys = { parry = hkParry, aim = hkAim, speed = hkSpeed, fly = hkFly, chams = hkChams },
     destroy = function()
         -- remember everything so a reload is invisible: states, keybinds,
@@ -351,6 +395,7 @@ genv.__HAVOC_UI_DEMO = {
             genv.__HAVOC_DEMO_POS = pos
         end)
         pcall(function() cfg:save("__autosave") end)
+        pcall(function() hud:destroy() end)
         pcall(function() inputHandle.disconnect() end)
         for _, c in ipairs(conns) do
             pcall(function() c:Disconnect() end)

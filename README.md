@@ -3,17 +3,17 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.8-config — sandbox iteration.** Design language: flat square
+**Status: v0.9-hud — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
 spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
 panel** with a live module **search box** and an `[x]` visibility switch
 for every category list, **right-click module settings drawers**, a **full
 keybind system** (mouse buttons, Ctrl/Shift/Alt combos, hold/toggle modes,
-ESC-unbinds), and a **Config tab**: live theme editing (presets +
-per-colour pickers that repaint everything instantly) plus per-slot
-save/load/delete configs. Tight rows, ON = #55FF55 green / OFF = #AAAAAA
-gray, inline `[x]` checkboxes and vanilla-style sliders, chat-palette
-accents (gold #FFFF55, red #FF5555, aqua #55FFFF).
+ESC-unbinds), a **Config tab** (live theme editing + presets + per-slot
+save/load configs) and a **HUD** (watermark with FPS + arraylist + keybind
+list). Tight rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]`
+checkboxes and vanilla-style sliders, chat-palette accents (gold #FFFF55,
+red #FF5555, aqua #55FFFF).
 
 ## Layout
 
@@ -144,6 +144,28 @@ Configs serialize booleans, numbers, strings, `Color3`, `EnumItem`s and
 nested tables, so module values, multiselect states and colour pickers
 round-trip losslessly. `UI.refreshAll()` and `UI.refreshKeybinds()` can
 also be called manually after external state changes.
+
+## HUD (watermark + arraylist + keybind list)
+
+```lua
+local hud = UI.makeHud(screenGui)
+hud:addModule("Box ESP", function() return state.box end)  -- appears in the
+hud:addModule("Fly", function() return state.fly end)      -- arraylist when true
+
+hud:setWatermark(true)   -- top-left: "HAVOC HUB vX  |  NN FPS"
+hud:setArrayList(true)   -- top-right: active modules, longest first
+hud:setKeybinds(true)    -- bottom-left: "[Ctrl+H] Speed", from bound chips
+hud:destroy()
+```
+
+The keybind list reads the live keybind registry (descriptions + any
+modifier combo), dims disabled entries, and updates on every rebind.
+
+`UI.addRefresh(fn)` registers custom refresh work that runs on every
+`refreshAll()` (config loads, autosaves) — the demo uses it to re-apply
+HUD flags and UI scale. `W.setScale(s)` + `W.relayout()` resize the panels
+and re-seat them on their slots without overlap (`W.getScale()` reads the
+current value).
 
 ## Sandbox workflow
 
