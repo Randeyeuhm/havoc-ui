@@ -31,6 +31,7 @@ local state = {
     reach = 5,
     target = "Nearest",
     autoClicker = false,
+    aim = false,
     reachLo = 8,
     reachHi = 16,
     targetName = "",
@@ -60,6 +61,8 @@ local state = {
 local hkParry = { Key = Enum.KeyCode.P, Enabled = true, Desc = "Auto Parry" }
 local hkFly = { Key = Enum.KeyCode.J, Enabled = true, Desc = "Fly" }
 local hkChams = { Key = Enum.KeyCode.C, Enabled = true, Desc = "Chams" }
+local hkAim = { Key = Enum.UserInputType.MouseButton2, Enabled = true, Desc = "Aim Assist", Mode = "hold" }
+local hkSpeed = { Key = Enum.KeyCode.H, Mods = { ctrl = true }, Enabled = true, Desc = "Speed" }
 
 local gui = UI.makeClickGui{
     parent = screenGui,
@@ -69,12 +72,15 @@ local gui = UI.makeClickGui{
 }
 
 local combat = gui.category("Combat")
-combat:addToggle("Auto Parry", function() return state.autoParry end, function(v) state.autoParry = v end, hkParry)
+local parryT = combat:addToggle("Auto Parry", function() return state.autoParry end,
+    function(v) state.autoParry = v end, hkParry)
 combat:addSlider("Reach", 1, 10, function() return state.reach end, function(v) state.reach = v end, { step = 0.1 })
 combat:addDropdown("Target Mode", { "Nearest", "Crosshair", "Mouse" }, function() return state.target end, function(v)
     state.target = v
 end)
 combat:addToggle("Auto Clicker", function() return state.autoClicker end, function(v) state.autoClicker = v end)
+local aimT = combat:addToggle("Aim Assist", function() return state.aim end,
+    function(v) state.aim = v end, hkAim)
 combat:addSection("timing")
 combat:addProgress("Parry Cooldown", function() return (os.clock() % 3) / 3 end)
 combat:addRangeSlider("Reach Window", 5, 40, function() return state.reachLo, state.reachHi end,
@@ -85,7 +91,10 @@ combatAdv:addTextInput("Target Name", function() return state.targetName end,
 combatAdv:addSlider("Prediction", 0, 1, function() return state.prediction end,
     function(v) state.prediction = v end, { step = 0.05 })
 combatAdv:addToggle("Silent Aim", function() return state.silentAim end, function(v) state.silentAim = v end)
-combat:addLabel("Green = ON  -  gold = value  -  [+] expands")
+combat:addLabel("chips: key / mouse / Ctrl+Shift combos - ESC unbinds")
+hkParry.Active = state.autoParry
+UI.bind(hkParry, { mode = "toggle", onActive = function(a) state.autoParry = a; parryT.update() end })
+UI.bind(hkAim, { mode = "hold", onActive = function(a) state.aim = a; aimT.update() end })
 
 local visuals = gui.category("Visuals")
 visuals:addToggle("Box ESP", function() return state.box end, function(v) state.box = v end)
@@ -116,7 +125,7 @@ player:addToggle("Fly", function() return state.fly end, function(v) state.fly =
     end,
 })
 player:addKeybind(hkFly)
-player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end, nil, {
+local speedT = player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end, nil, {
     settings = function(s)
         s:addSlider("Speed Value", 10, 100, function() return state.speedValue end,
             function(v) state.speedValue = v end, { step = 1 })
@@ -130,7 +139,9 @@ player:addToggle("Infinite Jump", function() return state.infJump end, function(
 })
 player:addSlider("Walk Speed", 16, 200, function() return state.walkSpeed end, function(v) state.walkSpeed = v end,
     { step = 2 })
+player:addKeybind(hkSpeed)
 player:addLabel("right-click a module for its settings")
+UI.bind(hkSpeed, { mode = "toggle", onActive = function(a) state.speed = a; speedT.update() end })
 
 local movement = gui.category("Movement", { collapsed = true })
 movement:addToggle("Fullbright", function() return state.fullbright end, function(v) state.fullbright = v end)

@@ -3,14 +3,15 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.6-settings — sandbox iteration.** Design language: flat square
+**Status: v0.7-keys — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
 spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
 panel** with a live module **search box** and an `[x]` visibility switch
-for every category list, **right-click module settings drawers**, tight
-rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]` checkboxes and
-vanilla-style sliders, chat-palette accents (gold #FFFF55, red #FF5555,
-aqua #55FFFF).
+for every category list, **right-click module settings drawers**, a **full
+keybind system** (mouse buttons, Ctrl/Shift/Alt combos, hold/toggle modes,
+ESC-unbinds), tight rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline
+`[x]` checkboxes and vanilla-style sliders, chat-palette accents (gold
+#FFFF55, red #FF5555, aqua #55FFFF).
 
 ## Layout
 
@@ -85,10 +86,28 @@ substring): matching panels stay open, groups open when a child matches,
 empty categories shrink to their header, and clearing the box restores the
 previous expand/open state.
 
-Rows without keybinds: click toggles/expands. Keybind chips: click, then
-press a key (`Esc` cancels; `UI.init{ canBind }` can veto). Sliders: drag
-to scrub; **shift-click (or right-click) opens a type-in box** for an exact
-value (`Enter` applies and snaps to the step, `Esc`/click-away cancels).
+Rows without keybinds: click toggles/expands. Sliders: drag to scrub;
+**shift-click (or right-click) opens a type-in box** for an exact value
+(`Enter` applies and snaps to the step, `Esc`/click-away cancels).
+
+**Keybinds**: click a chip and press a keyboard key, a mouse button
+(`M1`/`M2`/`M3`), or a combo (`Ctrl`/`Shift`/`Alt` + key). `Esc` or
+`Backspace` while editing **unbinds** the key (`[-]`); clicking the chip
+again aborts the edit untouched. `UI.init{ canBind }` can veto a key.
+
+```lua
+local hk = { Key = Enum.KeyCode.P, Enabled = true, Desc = "Auto Parry" }
+hk.Active = state.parry  -- seed so the first press flips from the real state
+UI.bind(hk, { mode = "toggle", onActive = function(active) state.parry = active; row.update() end })
+-- modes: "toggle" (press flips hk.Active) / "hold" (active while held)
+-- live fields: hk.Key (KeyCode or UserInputType), hk.Mods{ctrl,shift,alt},
+--              hk.Enabled (false silences), hk.Mode, hk.Active
+UI.unbind(hk)  -- stops dispatching
+```
+
+`attachInput()` connects the dispatcher automatically (games just call
+`UI.bind`); `UI.dispatchBinding(input, isDown)` is exposed for manual
+wiring. Bindings never fire while a rebind capture is active.
 
 ## Sandbox workflow
 

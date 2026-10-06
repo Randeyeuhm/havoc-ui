@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.6.2-spacing"
+HavocUI.VERSION = "v0.7-keys"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -156,6 +156,7 @@ end
 -- ============================================================
 local drags = {}
 local pendingRebind = nil
+local rebindGuardUntil = 0
 
 function HavocUI.startDrag(fn)
     table.insert(drags, fn)
@@ -167,6 +168,30 @@ function HavocUI.endDrag(fn)
         if drags[i] == fn then table.remove(drags, i) end
     end
 end
+
+-- pretty chip labels: "[P]", "[M2]", "[Ctrl+H]", "[-]" when unbound
+local function keyLabel(entry)
+    local key = entry and entry.Key
+    if key == nil then return "[-]" end
+    local name
+    if key == Enum.UserInputType.MouseButton1 then
+        name = "M1"
+    elseif key == Enum.UserInputType.MouseButton2 then
+        name = "M2"
+    elseif key == Enum.UserInputType.MouseButton3 then
+        name = "M3"
+    else
+        name = key.Name
+    end
+    local mods = entry.Mods
+    if mods then
+        if mods.ctrl then name = "Ctrl+" .. name end
+        if mods.shift then name = "Shift+" .. name end
+        if mods.alt then name = "Alt+" .. name end
+    end
+    return "[" .. name .. "]"
+end
+HavocUI.keyLabel = keyLabel
 
 function HavocUI.attachInput()
     local conns = {}
@@ -182,6 +207,14 @@ function HavocUI.attachInput()
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             table.clear(drags)
         end
+    end))
+    -- keybind dispatch rides along: games only call HavocUI.bind(entry)
+    table.insert(conns, UserInputService.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        HavocUI.dispatchBinding(input, true)
+    end))
+    table.insert(conns, UserInputService.InputEnded:Connect(function(input)
+        HavocUI.dispatchBinding(input, false)
     end))
     return {
         disconnect = function()
@@ -199,27 +232,124 @@ end
 
 function HavocUI.handleRebindInput(input)
     if not pendingRebind then return false end
-    if input.UserInputType ~= Enum.UserInputType.Keyboard then return false end
     local rb = pendingRebind
-    if input.KeyCode == Enum.KeyCode.Escape then
-        pendingRebind = nil
-        rb.chip.Text = rb.restore
-        rb.chip.TextColor3 = THEME.GRAY
+    local ut = input.UserInputType
+    if ut == Enum.UserInputType.Keyboard then
+        local kc = input.KeyCode
+        -- ESC / Backspace while editing unlinks the keybind entirely
+        if kc == Enum.KeyCode.Escape or kc == Enum.KeyCode.Backspace then
+            pendingRebind = nil
+            rebindGuardUntil = os.clock() + 0.15
+            rb.entry.Key = nil
+            rb.entry.Mods = nil
+            rb.entry.Active = false
+            rb.chip.Text = keyLabel(rb.entry)
+            rb.chip.TextColor3 = THEME.TEXT_DIM
+            saveTouched()
+            if HOST.onKeybindChanged then pcall(HOST.onKeybindChanged, rb.entry) end
+            return true
+        end
+        -- a bare modifier is not a binding, it forms a combo with the next key
+        if kc == Enum.KeyCode.LeftControl or kc == Enum.KeyCode.RightControl
+            or kc == Enum.KeyCode.LeftShift or kc == Enum.KeyCode.RightShift
+            or kc == Enum.KeyCode.LeftAlt or kc == Enum.KeyCode.RightAlt then
+            return true
+        end
+    elseif ut ~= Enum.UserInputType.MouseButton1
+        and ut ~= Enum.UserInputType.MouseButton2
+        and ut ~= Enum.UserInputType.MouseButton3 then
+        return false
+    end
+    local code = ut == Enum.UserInputType.Keyboard and input.KeyCode or ut
+    if HOST.canBind and HOST.canBind(rb.entry, code) == false then
         return true
     end
-    if HOST.canBind and HOST.canBind(rb.entry, input.KeyCode) == false then
-        return true
-    end
+    local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+    local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    local alt = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
     pendingRebind = nil
-    rb.entry.Key = input.KeyCode
-    rb.chip.Text = "[" .. input.KeyCode.Name .. "]"
+    rebindGuardUntil = os.clock() + 0.15
+    rb.entry.Key = code
+    rb.entry.Mods = (ctrl or shift or alt)
+        and { ctrl = ctrl or nil, shift = shift or nil, alt = alt or nil } or nil
+    rb.entry.Active = false
+    rb.chip.Text = keyLabel(rb.entry)
     rb.chip.TextColor3 = THEME.GRAY
+    saveTouched()
     if HOST.onKeybindChanged then
         pcall(HOST.onKeybindChanged, rb.entry)
     elseif HOST.onKeybindToggled then
         pcall(HOST.onKeybindToggled, rb.entry)
     end
     return true
+end
+
+-- ============================================================
+-- KEYBIND SYSTEM (toggle / hold / mouse / modifier combos)
+-- ============================================================
+local bindings = {}
+
+function HavocUI.bind(entry, opts)
+    if type(entry) ~= "table" then return end
+    if type(opts) == "string" then opts = { mode = opts } end
+    opts = opts or {}
+    entry.Mode = opts.mode or entry.Mode or "toggle"
+    bindings[entry] = { onActive = opts.onActive }
+    return entry
+end
+
+function HavocUI.unbind(entry)
+    bindings[entry] = nil
+end
+
+local function modsMatch(entry, input)
+    local key = entry.Key
+    if key == nil then return false end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if key ~= input.KeyCode then return false end
+    elseif key ~= input.UserInputType then
+        return false
+    end
+    local mods = entry.Mods
+    if mods and (mods.ctrl or mods.shift or mods.alt) then
+        local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+        local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        local alt = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        if (mods.ctrl or false) ~= ctrl then return false end
+        if (mods.shift or false) ~= shift then return false end
+        if (mods.alt or false) ~= alt then return false end
+    end
+    return true
+end
+
+function HavocUI.dispatchBinding(input, isDown)
+    -- never fire bindings while (or just after) a rebind capture owns the input
+    if pendingRebind or os.clock() < rebindGuardUntil then return end
+    for entry, b in pairs(bindings) do
+        if entry.Enabled ~= false and modsMatch(entry, input) then
+            local mode = entry.Mode or "toggle"
+            if isDown then
+                if mode == "hold" then
+                    if not entry.Active then
+                        entry.Active = true
+                        if b.onActive then pcall(b.onActive, true) end
+                    end
+                else
+                    entry.Active = not entry.Active
+                    if b.onActive then pcall(b.onActive, entry.Active and true or false) end
+                end
+            elseif mode == "hold" and entry.Active then
+                entry.Active = false
+                if b.onActive then pcall(b.onActive, false) end
+            end
+        end
+    end
 end
 
 -- ============================================================
@@ -356,7 +486,7 @@ function HavocUI.makeClickGui(opts)
 
     local function keyChip(parent, entry, opts2)
         opts2 = opts2 or {}
-        local chipText = "[" .. ((entry and entry.Key and entry.Key.Name) or "-") .. "]"
+        local chipText = keyLabel(entry)
         local chip = create("TextButton", {
             Size = UDim2.fromOffset(chipWidthFor(chipText), 16),
             Position = UDim2.new(1, -4, 0.5, -8),
@@ -381,6 +511,13 @@ function HavocUI.makeClickGui(opts)
         chip.MouseButton1Click:Connect(function()
             if opts2.locked then
                 if opts2.lockNote then toast(opts2.lockNote, { kind = "warn" }) end
+                return
+            end
+            if pendingRebind and pendingRebind.chip == chip then
+                -- a second click aborts the edit untouched
+                pendingRebind = nil
+                chip.Text = keyLabel(entry)
+                chip.TextColor3 = THEME.GRAY
                 return
             end
             HavocUI.beginRebind(entry, chip)
@@ -1038,7 +1175,7 @@ function HavocUI.makeClickGui(opts)
         })
         local chip = keyChip(row, entry, opts2)
         local function refresh()
-            chip.Text = "[" .. ((entry and entry.Key and entry.Key.Name) or "-") .. "]"
+            chip.Text = keyLabel(entry)
             chip.TextColor3 = (entry and entry.Enabled ~= false) and THEME.GRAY or Color3.fromRGB(90, 90, 90)
         end
         refresh()
