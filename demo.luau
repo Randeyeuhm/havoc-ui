@@ -124,7 +124,6 @@ player:addToggle("Fly", function() return state.fly end, function(v) state.fly =
             function(v) state.flyVert = v end, { step = 5 })
     end,
 })
-player:addKeybind(hkFly)
 local speedT = player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end, hkSpeed, {
     settings = function(s)
         s:addSlider("Speed Value", 10, 100, function() return state.speedValue end,
