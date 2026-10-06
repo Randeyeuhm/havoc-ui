@@ -125,7 +125,7 @@ player:addToggle("Fly", function() return state.fly end, function(v) state.fly =
     end,
 })
 player:addKeybind(hkFly)
-local speedT = player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end, nil, {
+local speedT = player:addToggle("Speed", function() return state.speed end, function(v) state.speed = v end, hkSpeed, {
     settings = function(s)
         s:addSlider("Speed Value", 10, 100, function() return state.speedValue end,
             function(v) state.speedValue = v end, { step = 1 })
@@ -139,8 +139,8 @@ player:addToggle("Infinite Jump", function() return state.infJump end, function(
 })
 player:addSlider("Walk Speed", 16, 200, function() return state.walkSpeed end, function(v) state.walkSpeed = v end,
     { step = 2 })
-player:addKeybind(hkSpeed)
 player:addLabel("right-click a module for its settings")
+hkSpeed.Active = state.speed
 UI.bind(hkSpeed, { mode = "toggle", onActive = function(a) state.speed = a; speedT.update() end })
 
 local movement = gui.category("Movement", { collapsed = true })
