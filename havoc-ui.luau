@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.3-detached"
+HavocUI.VERSION = "v0.4-hub"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -834,20 +834,18 @@ function HavocUI.makeClickGui(opts)
     end
 
     -- ========================================================
-    -- CATEGORIES (each one is its own detached panel)
+    -- PANEL FACTORY (main hub + every category)
     -- ========================================================
-    function W.category(name, opts2)
-        opts2 = opts2 or {}
-        index = index + 1
-        local px, py
+    local function slotPosition(slot)
         if layout == "column" then
-            px = startX
-            py = startY + (index - 1) * 24
-        else
-            px = startX + (index - 1) * (width + gap)
-            py = startY
+            return startX, startY + slot * 24
         end
+        return startX + slot * (width + gap), startY
+    end
 
+    local function spawnPanel(name, opts2, slot)
+        opts2 = opts2 or {}
+        local px, py = slotPosition(slot)
         local panel = create("Frame", {
             Name = "HavocCat_" .. name,
             Size = UDim2.fromOffset(width, 22),
@@ -924,35 +922,90 @@ function HavocUI.makeClickGui(opts)
             headerText.Text = (expanded and "[-] " or "[+] ") .. name
             updatePanel()
         end
+
+        -- drag by the header; a real drag must not fire the expand toggle
+        local pressX, pressY, moved = 0, 0, false
+        header.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            pressX, pressY, moved = input.Position.X, input.Position.Y, false
+            local ox, oy = panel.Position.X.Offset, panel.Position.Y.Offset
+            HavocUI.startDrag(function(mx, my)
+                if math.abs(mx - pressX) + math.abs(my - pressY) > 4 then
+                    moved = true
+                end
+                panel.Position = UDim2.fromOffset(
+                    math.floor(ox + (mx - pressX)), math.floor(oy + (my - pressY)))
+            end)
+        end)
         header.MouseButton1Click:Connect(function()
+            if moved then
+                moved = false
+                return
+            end
             setExpanded(not expanded)
         end)
 
-        -- drag each panel by its own header
-        header.InputBegan:Connect(function(input)
-            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-            local sx, sy = input.Position.X, input.Position.Y
-            local ox, oy = panel.Position.X.Offset, panel.Position.Y.Offset
-            HavocUI.startDrag(function(mx, my)
-                panel.Position = UDim2.fromOffset(
-                    math.floor(ox + (mx - sx)), math.floor(oy + (my - sy)))
-            end)
-        end)
-
-        local cat = {}
-        cat.panel = panel
-        cat.header = header
-        cat.items = items
-        cat.setExpanded = setExpanded
-        cat.addToggle      = function(_, t, g, s, hk, o) return addToggle(items, t, g, s, hk, o) end
-        cat.addSlider      = function(_, t, mn, mx, g, s, o) return addSlider(items, t, mn, mx, g, s, o) end
-        cat.addDropdown    = function(_, t, it, g, s, o) return addDropdown(items, t, it, g, s, o) end
-        cat.addMultiSelect = function(_, t, it, g, s, o) return addMultiSelect(items, t, it, g, s, o) end
-        cat.addColor       = function(_, t, g, s, o) return addColor(items, t, g, s, o) end
-        cat.addKeybind     = function(_, e, o) return addKeybind(items, e, o) end
-        cat.addButton      = function(_, t, f, o) return addButton(items, t, f, o) end
-        cat.addLabel       = function(_, t) return addLabel(items, t) end
         updatePanel()
+        return {
+            panel = panel, header = header, items = items,
+            setExpanded = setExpanded,
+        }
+    end
+
+    -- the little main hub: an [x] switch for every category list
+    local mainRef = spawnPanel("HAVOC HUB", {}, 0)
+    local function addVisibilityRow(catName, catPanel)
+        local row = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 20),
+            BackgroundColor3 = THEME.ROW_HOVER,
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = mainRef.items,
+        })
+        local marker = label(row, "[x]", 12, THEME.GREEN, {
+            Size = UDim2.fromOffset(26, 20),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local nameL = label(row, catName, 12, THEME.WHITE, {
+            Size = UDim2.new(1, -40, 1, 0),
+            Position = UDim2.fromOffset(30, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        row.MouseEnter:Connect(function() tween(row, 0.1, { BackgroundTransparency = THEME.ROW_HOVER_T }) end)
+        row.MouseLeave:Connect(function() tween(row, 0.1, { BackgroundTransparency = 1 }) end)
+        row.MouseButton1Click:Connect(function()
+            local vis = not catPanel.Visible
+            catPanel.Visible = vis
+            marker.Text = vis and "[x]" or "[ ]"
+            marker.TextColor3 = vis and THEME.GREEN or THEME.TEXT_DIM
+            nameL.TextColor3 = vis and THEME.WHITE or THEME.TEXT_DIM
+        end)
+    end
+
+    function W.category(name, opts2)
+        opts2 = opts2 or {}
+        index = index + 1
+        local ref = spawnPanel(name, opts2, index)
+        addVisibilityRow(name, ref.panel)
+        local cat = {}
+        cat.panel = ref.panel
+        cat.header = ref.header
+        cat.items = ref.items
+        cat.setExpanded = ref.setExpanded
+        cat.addToggle      = function(_, t, g, s, hk, o) return addToggle(ref.items, t, g, s, hk, o) end
+        cat.addSlider      = function(_, t, mn, mx, g, s, o) return addSlider(ref.items, t, mn, mx, g, s, o) end
+        cat.addDropdown    = function(_, t, it, g, s, o) return addDropdown(ref.items, t, it, g, s, o) end
+        cat.addMultiSelect = function(_, t, it, g, s, o) return addMultiSelect(ref.items, t, it, g, s, o) end
+        cat.addColor       = function(_, t, g, s, o) return addColor(ref.items, t, g, s, o) end
+        cat.addKeybind     = function(_, e, o) return addKeybind(ref.items, e, o) end
+        cat.addButton      = function(_, t, f, o) return addButton(ref.items, t, f, o) end
+        cat.addLabel       = function(_, t) return addLabel(ref.items, t) end
         return cat
     end
 

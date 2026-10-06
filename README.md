@@ -3,11 +3,13 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.3-detached — sandbox iteration.** Design language: flat square
+**Status: v0.4-hub — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
-spawn their own lists; drag each panel anywhere), tight rows, ON = #55FF55
-green / OFF = #AAAAAA gray, inline `[x]` checkboxes and vanilla-style
-sliders, chat-palette accents (gold #FFFF55, red #FF5555, aqua #55FFFF).
+spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
+panel** with an `[x]` visibility switch for every category list, tight
+rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]` checkboxes and
+vanilla-style sliders, chat-palette accents (gold #FFFF55, red #FF5555,
+aqua #55FFFF).
 
 ## Layout
 
@@ -48,7 +50,10 @@ if UI.handleRebindInput(input) then return end
 maxListHeight, scale }` -> `{ panels, category(name, { collapsed }),
 setScale, show, hide, toggle, isVisible, destroy }`. Each category is a
 detached panel: the collapsed header (`[+] Name`) spawns its list on click,
-every panel drags by its own header.
+every panel drags by its own header. A drag never toggles the list — the
+header only collapses on a real click. The `HAVOC HUB` panel auto-spawns
+in slot 0 and lists every category with an `[x]` switch that hides/shows
+that category's panel.
 
 Category rows (each returns `{ row, update }`, `addLabel` returns the
 label): `addToggle(text, get, set, hkEntry?, opts)`,
