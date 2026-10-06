@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.9.2-keys"
+HavocUI.VERSION = "v0.9.3-keys"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -399,7 +399,8 @@ function HavocUI.bind(entry, opts)
     if type(entry) ~= "table" then return end
     if type(opts) == "string" then opts = { mode = opts } end
     opts = opts or {}
-    entry.Mode = opts.mode or entry.Mode or "toggle"
+    -- a mode already on the entry (e.g. loaded from a config) wins over the default
+    if entry.Mode == nil then entry.Mode = opts.mode or "toggle" end
     bindings[entry] = { onActive = opts.onActive }
     return entry
 end
@@ -840,6 +841,11 @@ function HavocUI.makeClickGui(opts)
             entry.Active = false
             chip.Text = keyLabel(entry)
             chip.TextColor3 = THEME.GRAY
+            -- switching to hold: nothing is held yet, so sync the module off
+            if entry.Mode == "hold" then
+                local b = bindings[entry]
+                if b and b.onActive then pcall(b.onActive, false) end
+            end
             toast(tostring(entry.Desc or "keybind") .. ": " .. entry.Mode .. " mode", { kind = "info" })
             saveTouched()
             if HOST.onKeybindChanged then pcall(HOST.onKeybindChanged, entry) end
