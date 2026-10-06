@@ -3,15 +3,17 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.7-keys — sandbox iteration.** Design language: flat square
+**Status: v0.8-config — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
 spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
 panel** with a live module **search box** and an `[x]` visibility switch
 for every category list, **right-click module settings drawers**, a **full
 keybind system** (mouse buttons, Ctrl/Shift/Alt combos, hold/toggle modes,
-ESC-unbinds), tight rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline
-`[x]` checkboxes and vanilla-style sliders, chat-palette accents (gold
-#FFFF55, red #FF5555, aqua #55FFFF).
+ESC-unbinds), and a **Config tab**: live theme editing (presets +
+per-colour pickers that repaint everything instantly) plus per-slot
+save/load/delete configs. Tight rows, ON = #55FF55 green / OFF = #AAAAAA
+gray, inline `[x]` checkboxes and vanilla-style sliders, chat-palette
+accents (gold #FFFF55, red #FF5555, aqua #55FFFF).
 
 ## Layout
 
@@ -108,6 +110,40 @@ UI.unbind(hk)  -- stops dispatching
 `attachInput()` connects the dispatcher automatically (games just call
 `UI.bind`); `UI.dispatchBinding(input, isDown)` is exposed for manual
 wiring. Bindings never fire while a rebind capture is active.
+
+## Theme (live)
+
+```lua
+UI.setThemeColor("BG", Color3.fromRGB(10, 10, 12))  -- repaints the whole UI at once
+UI.setThemeColor("GREEN", Color3.fromRGB(120, 255, 120))
+UI.resetTheme()          -- back to stock
+UI.DEFAULT_THEME         -- the stock palette (read-only source of truth)
+```
+
+Every GUI element painted with the previous token colour is repainted on
+the spot (UIStroke borders included), so themes apply while the menu is
+open. `HavocUI.init{ theme = {...} }` still works for pre-load overrides.
+
+## Configs (save / load / list / delete)
+
+```lua
+local cfg = UI.makeConfig{ folder = "havoc-ui/configs" }
+
+cfg:track("Reach", function() return state.reach end, function(v) state.reach = v end)
+cfg:trackKeybind(hkEntry)      -- saves Key / Mods / Mode / Enabled
+cfg:trackTheme()               -- saves any theme overrides
+
+cfg:save("legit")              -- -> havoc-ui/configs/legit.lua
+cfg:load("legit")              -- applies modules + keybinds + theme,
+                               -- then UI.refreshAll() repaints every widget
+cfg:list()      --> { "legit", "rage", ... }
+cfg:exists("legit"), cfg:delete("legit"), cfg.path("legit")
+```
+
+Configs serialize booleans, numbers, strings, `Color3`, `EnumItem`s and
+nested tables, so module values, multiselect states and colour pickers
+round-trip losslessly. `UI.refreshAll()` and `UI.refreshKeybinds()` can
+also be called manually after external state changes.
 
 ## Sandbox workflow
 

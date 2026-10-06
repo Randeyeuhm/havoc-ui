@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.7.1-clip"
+HavocUI.VERSION = "v0.8-config"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -192,6 +192,81 @@ local function keyLabel(entry)
     return "[" .. name .. "]"
 end
 HavocUI.keyLabel = keyLabel
+
+-- ============================================================
+-- LIVE THEME (recolor the whole UI at runtime)
+-- ============================================================
+local DEFAULT_THEME = {}
+for k, v in pairs(THEME) do DEFAULT_THEME[k] = v end
+HavocUI.DEFAULT_THEME = DEFAULT_THEME
+
+local themeRoots = {}
+local function registerThemeRoot(root)
+    if not root then return end
+    for _, r in ipairs(themeRoots) do
+        if r == root then return end
+    end
+    themeRoots[#themeRoots + 1] = root
+end
+
+-- exact-value remap: anything painted with the old theme colour repaints
+function HavocUI.setThemeColor(token, color)
+    local old = THEME[token]
+    if old == nil or typeof(color) ~= "Color3" then return end
+    THEME[token] = color
+    if old == color then return end
+    local props = { "BackgroundColor3", "TextColor3", "PlaceholderColor3", "ScrollBarImageColor3", "ImageColor3" }
+    for _, root in ipairs(themeRoots) do
+        local ok, desc = pcall(function() return root:GetDescendants() end)
+        if ok then
+            for _, d in ipairs(desc) do
+                if d:IsA("UIStroke") then
+                    if d.Color == old then
+                        pcall(function() d.Color = color end)
+                    end
+                else
+                    for _, prop in ipairs(props) do
+                        local ok2, cur = pcall(function() return d[prop] end)
+                        if ok2 and typeof(cur) == "Color3" and cur == old then
+                            pcall(function() d[prop] = color end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function HavocUI.resetTheme()
+    for tok, v in pairs(DEFAULT_THEME) do
+        if typeof(v) == "Color3" then
+            HavocUI.setThemeColor(tok, v)
+        end
+    end
+end
+
+-- ============================================================
+-- WIDGET REGISTRIES (refresh after config loads / rebinds)
+-- ============================================================
+local chipRefs = {}
+local refreshables = {}
+
+function HavocUI.refreshKeybinds()
+    for entry, chip in pairs(chipRefs) do
+        if chip and chip.Parent then
+            chip.Text = keyLabel(entry)
+            chip.TextColor3 = entry.Enabled ~= false and THEME.GRAY or Color3.fromRGB(90, 90, 90)
+        end
+    end
+end
+
+function HavocUI.refreshAll()
+    for i = #refreshables, 1, -1 do
+        local ok = pcall(refreshables[i])
+        if not ok then table.remove(refreshables, i) end
+    end
+    HavocUI.refreshKeybinds()
+end
 
 function HavocUI.attachInput()
     local conns = {}
@@ -356,6 +431,7 @@ end
 -- TOASTER  (flat chat lines)
 -- ============================================================
 function HavocUI.makeToaster(parent)
+    registerThemeRoot(parent)
     local holder = create("Frame", {
         Size = UDim2.new(0, 420, 0, 400),
         Position = UDim2.new(0.5, -210, 0, 8),
@@ -425,6 +501,7 @@ function HavocUI.makeClickGui(opts)
     local parent = opts.parent
     local index = 0
     local panelRefs = {}
+    registerThemeRoot(parent)
 
     -- UI scale (same rule as the hub menus: auto up to 1.2x on big displays)
     local vpY = 0
@@ -503,6 +580,7 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         box(chip, THEME.BORDER, 0.5)
+        if entry then chipRefs[entry] = chip end
         chip:GetPropertyChangedSignal("Text"):Connect(function()
             chip.Size = UDim2.fromOffset(chipWidthFor(chip.Text), 16)
         end)
@@ -1619,83 +1697,62 @@ function HavocUI.makeClickGui(opts)
 
     local function makeBuilders(cat, target, group)
         local b = {}
+        -- every widget funnels through reg: search registry + live-refresh registry
+        local function reg(entryName, h)
+            registerEntry(cat, entryName, (type(h) == "table" and h.row) or h, group)
+            if type(h) == "table" and h.update then
+                refreshables[#refreshables + 1] = h.update
+            end
+            return h
+        end
         b.addToggle = function(_, t, g, s, hk, o)
-            local h = addToggle(target, t, g, s, hk, o)
-            registerEntry(cat, t, h.row, group)
+            local h = reg(t, addToggle(target, t, g, s, hk, o))
             if o and o.settings then
                 h.settings = makeSettingsDrawer(cat, target, h.row, t, o, group, h.chip)
             end
             return h
         end
         b.addSlider = function(_, t, mn, mx, g, s, o)
-            local h = addSlider(target, t, mn, mx, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addSlider(target, t, mn, mx, g, s, o))
         end
         b.addDropdown = function(_, t, it, g, s, o)
-            local h = addDropdown(target, t, it, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addDropdown(target, t, it, g, s, o))
         end
         b.addMultiSelect = function(_, t, it, g, s, o)
-            local h = addMultiSelect(target, t, it, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addMultiSelect(target, t, it, g, s, o))
         end
         b.addColor = function(_, t, g, s, o)
-            local h = addColor(target, t, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addColor(target, t, g, s, o))
         end
         b.addKeybind = function(_, e, o)
-            local h = addKeybind(target, e, o)
-            registerEntry(cat, (o and o.name) or (e and e.Desc) or "keybind", h.row, group)
-            return h
+            return reg((o and o.name) or (e and e.Desc) or "keybind", addKeybind(target, e, o))
         end
         b.addButton = function(_, t, f, o)
-            local h = addButton(target, t, f, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addButton(target, t, f, o))
         end
         b.addLabel = function(_, t)
-            local h = addLabel(target, t)
-            registerEntry(cat, t, h, group)
-            return h
+            return reg(t, addLabel(target, t))
         end
         b.addSeparator = function()
-            local h = addSeparator(target)
-            registerEntry(cat, "", h.row, group)
-            return h
+            return reg("", addSeparator(target))
         end
         b.addSection = function(_, t)
-            local h = addSection(target, t)
-            registerEntry(cat, "", h.row, group)
-            return h
+            return reg("", addSection(target, t))
         end
         b.addProgress = function(_, t, g, o)
-            local h = addProgress(target, t, g, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addProgress(target, t, g, o))
         end
         b.addIndicator = function(_, t, g, o)
-            local h = addIndicator(target, t, g, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addIndicator(target, t, g, o))
         end
         b.addTextInput = function(_, t, g, s, o)
-            local h = addTextInput(target, t, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addTextInput(target, t, g, s, o))
         end
         b.addStepper = function(_, t, mn, mx, st, g, s, o)
-            local h = addStepper(target, t, mn, mx, st, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addStepper(target, t, mn, mx, st, g, s, o))
         end
         b.addRangeSlider = function(_, t, mn, mx, g, s, o)
-            local h = addRangeSlider(target, t, mn, mx, g, s, o)
-            registerEntry(cat, t, h.row, group)
-            return h
+            return reg(t, addRangeSlider(target, t, mn, mx, g, s, o))
         end
         if not group then
             b.addGroup = function(_, t, o) return addGroup(cat, target, t, o) end
@@ -2107,6 +2164,188 @@ function HavocUI.makeClickGui(opts)
         end
     end
     return W
+end
+
+-- ============================================================
+-- CONFIG (save / load / list / delete per slot)
+-- ============================================================
+local function serializeValue(v)
+    local t = typeof(v)
+    if t == "number" or t == "boolean" then
+        return tostring(v)
+    elseif t == "string" then
+        return string.format("%q", v)
+    elseif t == "Color3" then
+        return string.format("Color3.fromRGB(%d,%d,%d)",
+            math.floor(v.R * 255 + 0.5), math.floor(v.G * 255 + 0.5), math.floor(v.B * 255 + 0.5))
+    elseif t == "EnumItem" then
+        return "Enum." .. tostring(v.EnumType) .. "." .. v.Name
+    elseif t == "table" then
+        local parts = {}
+        for k, val in pairs(v) do
+            local kk
+            if type(k) == "string" then
+                kk = "[" .. string.format("%q", k) .. "]"
+            elseif type(k) == "number" then
+                kk = "[" .. tostring(k) .. "]"
+            end
+            if kk then parts[#parts + 1] = kk .. "=" .. serializeValue(val) end
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    return "nil"
+end
+
+local function cfgNotify(text, kind)
+    if HOST.notify then
+        pcall(HOST.notify, text, { kind = kind or "info" })
+    else
+        print("[havoc-ui] " .. tostring(text))
+    end
+end
+
+function HavocUI.makeConfig(opts)
+    opts = opts or {}
+    local folder = opts.folder or "havoc-ui/configs"
+    local tracks = {}
+    local kbTracks = {}
+    local themeTracked = false
+    local C = {}
+
+    function C.track(_, id, getter, setter)
+        tracks[id] = { get = getter, set = setter }
+        return C
+    end
+
+    function C.trackKeybind(_, entry, id)
+        if type(entry) ~= "table" then return C end
+        kbTracks[#kbTracks + 1] = { entry = entry, id = id or entry.Desc or ("keybind " .. (#kbTracks + 1)) }
+        return C
+    end
+
+    function C.trackTheme(_, on)
+        themeTracked = on ~= false
+        return C
+    end
+
+    local function filePath(slot)
+        local safe = tostring(slot or ""):gsub("[^%w%-%_ ]", "")
+        if safe == "" then safe = "default" end
+        return folder .. "/" .. safe .. ".lua", safe
+    end
+    C.path = function(_, slot) return (filePath(slot)) end
+
+    function C.save(_, slot)
+        local path, safe = filePath(slot)
+        local data = { modules = {}, keybinds = {}, theme = {} }
+        for id, t in pairs(tracks) do
+            local ok, v = pcall(t.get)
+            if ok then data.modules[id] = v end
+        end
+        for _, kt in ipairs(kbTracks) do
+            data.keybinds[kt.id] = {
+                Key = kt.entry.Key, Mods = kt.entry.Mods,
+                Mode = kt.entry.Mode, Enabled = kt.entry.Enabled,
+            }
+        end
+        if themeTracked then
+            for tok, v in pairs(THEME) do
+                if typeof(v) == "Color3" and DEFAULT_THEME[tok] ~= v then
+                    data.theme[tok] = v
+                end
+            end
+        end
+        pcall(makefolder, folder)
+        local ok, err = pcall(writefile, path, "return " .. serializeValue(data) .. "\n")
+        if not ok then
+            cfgNotify("config save failed: " .. tostring(err), "err")
+            return false
+        end
+        cfgNotify("saved config '" .. safe .. "'", "ok")
+        return true
+    end
+
+    function C.load(_, slot)
+        local path, safe = filePath(slot)
+        local okRead, content = pcall(readfile, path)
+        if not okRead or type(content) ~= "string" then
+            cfgNotify("config '" .. safe .. "' not found", "warn")
+            return false
+        end
+        local loader = loadstring
+        if type(loader) ~= "function" then
+            cfgNotify("executor has no loadstring", "err")
+            return false
+        end
+        local data
+        local okRun = pcall(function()
+            local chunk = loader(content)
+            data = chunk()
+        end)
+        if not okRun or type(data) ~= "table" then
+            cfgNotify("config '" .. safe .. "' is corrupt", "err")
+            return false
+        end
+        for id, v in pairs(data.modules or {}) do
+            local t = tracks[id]
+            if t then pcall(t.set, v) end
+        end
+        for _, kt in ipairs(kbTracks) do
+            local saved = data.keybinds and data.keybinds[kt.id]
+            if type(saved) == "table" then
+                kt.entry.Key = saved.Key
+                kt.entry.Mods = saved.Mods
+                kt.entry.Mode = saved.Mode
+                kt.entry.Enabled = saved.Enabled
+                kt.entry.Active = false
+                if HOST.onKeybindChanged then pcall(HOST.onKeybindChanged, kt.entry) end
+            end
+        end
+        if themeTracked and type(data.theme) == "table" then
+            for tok, def in pairs(DEFAULT_THEME) do
+                if typeof(def) == "Color3" then HavocUI.setThemeColor(tok, def) end
+            end
+            for tok, v in pairs(data.theme) do
+                if typeof(v) == "Color3" and THEME[tok] ~= nil then
+                    HavocUI.setThemeColor(tok, v)
+                end
+            end
+        end
+        HavocUI.refreshAll()
+        cfgNotify("loaded config '" .. safe .. "'", "ok")
+        return true
+    end
+
+    function C.list(_)
+        local ok, files = pcall(listfiles, folder)
+        local out = {}
+        if ok and type(files) == "table" then
+            for _, f in ipairs(files) do
+                local name = tostring(f):match("([^/\\]+)%.lua$")
+                if name then out[#out + 1] = name end
+            end
+        end
+        table.sort(out)
+        return out
+    end
+
+    function C.exists(_, slot)
+        local ok, res = pcall(isfile, filePath(slot))
+        return ok and res == true
+    end
+
+    function C.delete(_, slot)
+        local path, safe = filePath(slot)
+        local ok = pcall(delfile, path)
+        if ok then
+            cfgNotify("deleted config '" .. safe .. "'", "warn")
+        else
+            cfgNotify("could not delete '" .. safe .. "'", "err")
+        end
+        return ok
+    end
+
+    return C
 end
 
 return HavocUI
