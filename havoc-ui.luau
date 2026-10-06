@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.7-keys"
+HavocUI.VERSION = "v0.7.1-clip"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -529,15 +529,8 @@ function HavocUI.makeClickGui(opts)
     local function addToggle(parent, text, getter, setter, hkEntry, opts2)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
-        local cw = hkEntry and chipWidthFor("[" .. ((hkEntry.Key and hkEntry.Key.Name) or "-") .. "]") or 0
-        local nameReserve
-        if cw > 0 then
-            nameReserve = cw + 12 + (opts2.settings and 24 or 0)
-        else
-            nameReserve = 14 + (opts2.settings and 16 or 0)
-        end
         local name = label(row, text, 12, THEME.GRAY, {
-            Size = UDim2.new(1, -nameReserve, 1, 0),
+            Size = UDim2.new(1, -14, 1, 0),
             Position = UDim2.fromOffset(6, 0),
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
@@ -545,6 +538,17 @@ function HavocUI.makeClickGui(opts)
         })
         local chip = nil
         if hkEntry then chip = keyChip(row, hkEntry, opts2) end
+        -- name width tracks the real chip: rebinding to [Ctrl+H] must not clip
+        local function refitName()
+            local reserve = 10
+            if chip then reserve = reserve + chipWidthFor(chip.Text) + 6 end
+            if opts2.settings then reserve = reserve + 22 end
+            name.Size = UDim2.new(1, -reserve, 1, 0)
+        end
+        if chip then
+            chip:GetPropertyChangedSignal("Text"):Connect(refitName)
+        end
+        refitName()
         local function refresh()
             local on = getter() and true or false
             name.TextColor3 = on and THEME.GREEN or THEME.GRAY
@@ -558,7 +562,7 @@ function HavocUI.makeClickGui(opts)
             saveTouched()
         end)
         refresh()
-        return { row = row, update = refresh, chipW = cw }
+        return { row = row, update = refresh, chip = chip }
     end
 
     local function addSlider(parent, text, min, max, getter, setter, opts2)
@@ -1619,7 +1623,7 @@ function HavocUI.makeClickGui(opts)
             local h = addToggle(target, t, g, s, hk, o)
             registerEntry(cat, t, h.row, group)
             if o and o.settings then
-                h.settings = makeSettingsDrawer(cat, target, h.row, t, o, group, h.chipW or 0)
+                h.settings = makeSettingsDrawer(cat, target, h.row, t, o, group, h.chip)
             end
             return h
         end
@@ -1759,8 +1763,7 @@ function HavocUI.makeClickGui(opts)
         return builder
     end
 
-    makeSettingsDrawer = function(cat, parent, row, name, o, group, chipW)
-        chipW = chipW or 0
+    makeSettingsDrawer = function(cat, parent, row, name, o, group, chip)
         local holder = create("Frame", {
             Size = UDim2.new(1, 0, 0, 0),
             BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -1779,13 +1782,17 @@ function HavocUI.makeClickGui(opts)
             PaddingBottom = UDim.new(0, 4),
             Parent = holder,
         })
+        -- right side reads [chip] [+]: marker pinned to the edge, chip just left of it
         local marker = label(row, "[+]", 12, THEME.TEXT_DIM, {
             Size = UDim2.fromOffset(16, 20),
-            Position = UDim2.new(1, chipW > 0 and -(chipW + 28) or -22, 0, 0),
+            Position = UDim2.new(1, -22, 0, 0),
             TextXAlignment = Enum.TextXAlignment.Center,
-            ZIndex = 62,
+            ZIndex = 63,
             Parent = row,
         })
+        if chip then
+            chip.Position = UDim2.new(1, -26, 0.5, -8)
+        end
         local grp = {
             name = name, nameLower = string.lower(name), entries = {},
             open = false, container = holder, isDrawer = true,
