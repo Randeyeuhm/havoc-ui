@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.6.1-polish"
+HavocUI.VERSION = "v0.6.2-spacing"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -584,7 +584,7 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         local holderLayout = create("UIListLayout", {
-            Padding = UDim.new(0, 0),
+            Padding = UDim.new(0, 1),
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = holder,
         })
@@ -676,7 +676,7 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         create("UIListLayout", {
-            Padding = UDim.new(0, 0),
+            Padding = UDim.new(0, 1),
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = holder,
         })
@@ -784,7 +784,7 @@ function HavocUI.makeClickGui(opts)
             ZIndex = 61,
             Parent = parent,
         })
-        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+        create("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
         create("UIPadding", {
             PaddingLeft = UDim.new(0, 4),
             PaddingRight = UDim.new(0, 4),
@@ -1178,7 +1178,7 @@ function HavocUI.makeClickGui(opts)
         local fmt = opts2.format or function(frac)
             return string.format("%d%%", math.floor(frac * 100 + 0.5))
         end
-        local row = makeRow(parent, 22)
+        local row = makeRow(parent, 24)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(0.6, -6, 0, 14),
             Position = UDim2.fromOffset(6, 2),
@@ -1195,7 +1195,7 @@ function HavocUI.makeClickGui(opts)
         })
         local track = create("Frame", {
             Size = UDim2.new(1, -12, 0, 4),
-            Position = UDim2.new(0, 6, 1, -8),
+            Position = UDim2.new(0, 6, 1, -7),
             BackgroundColor3 = THEME.TRACK,
             BackgroundTransparency = 0.15,
             BorderSizePixel = 0,
@@ -1574,7 +1574,7 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         grp.container = container
-        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = container })
+        create("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = container })
         local header = create("TextButton", {
             Size = UDim2.new(1, 0, 0, 20),
             BackgroundColor3 = THEME.ROW_HOVER,
@@ -1601,7 +1601,7 @@ function HavocUI.makeClickGui(opts)
             ZIndex = 61,
             Parent = container,
         })
-        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = inner })
+        create("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = inner })
         create("UIPadding", { PaddingLeft = UDim.new(0, 8), Parent = inner })
         local function setOpen(v)
             grp.open = v and true or false
@@ -1634,7 +1634,7 @@ function HavocUI.makeClickGui(opts)
             ZIndex = 61,
             Parent = parent,
         })
-        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+        create("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
         create("UIPadding", {
             PaddingLeft = UDim.new(0, 8),
             PaddingRight = UDim.new(0, 4),
@@ -1736,19 +1736,23 @@ function HavocUI.makeClickGui(opts)
             Parent = panel,
         })
         local itemsLayout = create("UIListLayout", {
-            Padding = UDim.new(0, 0),
+            Padding = UDim.new(0, 1),
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = items,
         })
         create("UIPadding", {
             PaddingLeft = UDim.new(0, 2),
             PaddingRight = UDim.new(0, 2),
+            PaddingTop = UDim.new(0, 2),
+            PaddingBottom = UDim.new(0, 2),
             Parent = items,
         })
 
         local expanded = not opts2.collapsed
+        local V_PAD = 4 -- 2px breathing room top+bottom around the hover highlights
         local function updatePanel()
-            local contentH = itemsLayout.AbsoluteContentSize.Y
+            -- AbsoluteContentSize is post-UIScale, but panel/list offsets are not
+            local contentH = itemsLayout.AbsoluteContentSize.Y / scale + V_PAD
             local visH = expanded and math.min(contentH, maxList) or 0
             panel.Size = UDim2.fromOffset(width, 22 + visH)
             items.Size = UDim2.new(1, 0, 0, visH)
