@@ -54,10 +54,9 @@ local hkChams = { Key = Enum.KeyCode.C, Enabled = true, Desc = "Chams" }
 
 local gui = UI.makeClickGui{
     parent = screenGui,
-    title = "HAVOC HUB",
-    position = UDim2.fromOffset(80, 90),
-    width = 280,
-    footerHint = "RightShift - toggle  |  click to toggle / expand",
+    width = 180,
+    startX = 70,
+    startY = 100,
 }
 
 local combat = gui.category("Combat")
@@ -134,5 +133,5 @@ genv.__HAVOC_UI_DEMO = {
     end,
 }
 
-toaster("Havoc UI " .. UI.VERSION .. " loaded", { kind = "ok" })
+toaster("Havoc UI " .. UI.VERSION .. " - drag headers, click to expand", { kind = "ok" })
 print("[havoc-ui] demo loaded " .. UI.VERSION)

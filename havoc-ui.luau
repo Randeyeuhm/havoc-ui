@@ -3,7 +3,8 @@
 
     Design language:
       - flat square blocks, 1px borders, tight rows (no rounding, no glass)
-      - collapsible category lists: [+] Combat / [-] Combat
+      - detached category panels: the collapsed header ([+] Combat) spawns
+        its own list on click; every panel is draggable by its header
       - module rows click to toggle; ON = Minecraft green, OFF = gray
       - inline option lists: dropdowns, [x] checkboxes, vanilla-style sliders
       - chat-palette accents: #55FF55 green, #FFFF55 gold, #FF5555 red,
@@ -21,11 +22,10 @@
         }
 
         local gui = UI.makeClickGui{
-            parent = screenGui, title = "HAVOC HUB",
-            position = UDim2.fromOffset(60, 90),
-            footerHint = "RightShift - toggle",
+            parent = screenGui, width = 180,
+            startX = 60, startY = 80,
         }
-        local combat = gui.category("Combat")
+        local combat = gui.category("Combat")   -- one detached panel each
         combat:addToggle("Auto Parry", getter, setter, hkEntry)
         combat:addSlider("Reach", 1, 10, getter, setter, { step = 0.1 })
         combat:addDropdown("Target", { "Nearest", "Crosshair" }, getter, setter)
@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.2-block"
+HavocUI.VERSION = "v0.3-detached"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -285,30 +285,22 @@ end
 -- ============================================================
 function HavocUI.makeClickGui(opts)
     opts = opts or {}
-    local W = {}
-    local width = opts.width or 280
-    local footerH = opts.footerHint and 16 or 0
-    local chromeH = 24 + footerH
+    local W = { panels = {} }
+    local width = opts.width or 180
+    local gap = opts.gap or 10
+    local layout = opts.layout or "row"
+    local startX = opts.startX or 60
+    local startY = opts.startY or 80
     local maxList = opts.maxListHeight or 480
-    local titleH = 24
-
-    local frame = create("Frame", {
-        Name = opts.name or "HavocClickGui",
-        Size = UDim2.fromOffset(width, chromeH + 24),
-        Position = opts.position or UDim2.fromOffset(40, 60),
-        BackgroundColor3 = THEME.BG,
-        BackgroundTransparency = THEME.BG_T,
-        BorderSizePixel = 0,
-        ZIndex = opts.zindex or 60,
-        Parent = opts.parent,
-    })
-    box(frame, THEME.BORDER, 0)
+    local parent = opts.parent
+    local index = 0
+    local panelRefs = {}
 
     -- UI scale (same rule as the hub menus: auto up to 1.2x on big displays)
     local scale = tonumber(opts.scale)
     if not scale then
         local vpY = 0
-        local okS, psz = pcall(function() return opts.parent and opts.parent.AbsoluteSize end)
+        local okS, psz = pcall(function() return parent and parent.AbsoluteSize end)
         if okS and psz then vpY = psz.Y end
         if vpY <= 0 then
             local okC, cam = pcall(function() return workspace.CurrentCamera end)
@@ -317,102 +309,6 @@ function HavocUI.makeClickGui(opts)
         scale = math.clamp(vpY / 1150, 1, 1.2)
     end
     scale = math.clamp(scale, 0.5, 2)
-    local uiScale = Instance.new("UIScale")
-    uiScale.Scale = scale
-    uiScale.Parent = frame
-
-    -- title bar
-    local titlebar = create("Frame", {
-        Size = UDim2.new(1, 0, 0, titleH),
-        BackgroundColor3 = THEME.TITLEBAR,
-        BorderSizePixel = 0,
-        ZIndex = 61,
-        Parent = frame,
-    })
-    label(titlebar, opts.title or "HAVOC HUB", 13, THEME.WHITE, {
-        Size = UDim2.new(1, -40, 1, 0),
-        Position = UDim2.fromOffset(6, 0),
-        Font = FONTS.BOLD,
-        ZIndex = 62,
-        Parent = titlebar,
-    })
-    local closeBtn = create("TextButton", {
-        Size = UDim2.fromOffset(20, titleH),
-        Position = UDim2.new(1, -20, 0, 0),
-        BackgroundColor3 = THEME.BG,
-        BackgroundTransparency = 1,
-        Text = "x",
-        TextColor3 = THEME.RED,
-        TextSize = 14,
-        Font = FONTS.BOLD,
-        TextStrokeTransparency = THEME.SHADOW,
-        AutoButtonColor = false,
-        ZIndex = 62,
-        Parent = titlebar,
-    })
-    closeBtn.MouseEnter:Connect(function()
-        closeBtn.BackgroundTransparency = 0.4
-        closeBtn.BackgroundColor3 = Color3.fromRGB(90, 40, 40)
-    end)
-    closeBtn.MouseLeave:Connect(function()
-        closeBtn.BackgroundTransparency = 1
-    end)
-    closeBtn.MouseButton1Click:Connect(function()
-        if opts.onClose then
-            pcall(opts.onClose)
-        else
-            W.hide()
-        end
-    end)
-
-    -- scrollable list
-    local list = create("ScrollingFrame", {
-        Size = UDim2.new(1, 0, 1, -chromeH),
-        Position = UDim2.fromOffset(0, titleH),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = Color3.fromRGB(110, 110, 110),
-        ScrollBarImageTransparency = 0.2,
-        ZIndex = 61,
-        Parent = frame,
-    })
-    local listLayout = create("UIListLayout", {
-        Padding = UDim.new(0, 0),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = list,
-    })
-    create("UIPadding", { PaddingRight = UDim.new(0, 4), Parent = list })
-
-    local function updateHeight()
-        local contentH = listLayout.AbsoluteContentSize.Y
-        local visH = math.min(contentH, maxList)
-        frame.Size = UDim2.fromOffset(width, chromeH + visH)
-        list.CanvasSize = UDim2.new(0, 0, 0, contentH)
-    end
-    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight)
-
-    if opts.footerHint then
-        label(frame, opts.footerHint, 10, Color3.fromRGB(120, 120, 120), {
-            Size = UDim2.new(1, 0, 0, footerH),
-            Position = UDim2.new(0, 0, 1, -footerH),
-            TextXAlignment = Enum.TextXAlignment.Center,
-            ZIndex = 62,
-            Parent = frame,
-        })
-    end
-
-    -- drag by the title bar (deltas cancel any client inset)
-    titlebar.InputBegan:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        local sx, sy = input.Position.X, input.Position.Y
-        local px, py = frame.Position.X.Offset, frame.Position.Y.Offset
-        HavocUI.startDrag(function(mx, my)
-            frame.Position = UDim2.fromOffset(
-                math.floor(px + (mx - sx)), math.floor(py + (my - sy)))
-        end)
-    end)
 
     -- ========================================================
     -- ROW BUILDERS (used by categories)
@@ -938,20 +834,45 @@ function HavocUI.makeClickGui(opts)
     end
 
     -- ========================================================
-    -- CATEGORIES
+    -- CATEGORIES (each one is its own detached panel)
     -- ========================================================
-    local categories = {}
     function W.category(name, opts2)
         opts2 = opts2 or {}
+        index = index + 1
+        local px, py
+        if layout == "column" then
+            px = startX
+            py = startY + (index - 1) * 24
+        else
+            px = startX + (index - 1) * (width + gap)
+            py = startY
+        end
+
+        local panel = create("Frame", {
+            Name = "HavocCat_" .. name,
+            Size = UDim2.fromOffset(width, 22),
+            Position = UDim2.fromOffset(px, py),
+            BackgroundColor3 = THEME.BG,
+            BackgroundTransparency = THEME.BG_T,
+            BorderSizePixel = 0,
+            ZIndex = opts.zindex or 60,
+            Parent = parent,
+        })
+        box(panel, THEME.BORDER, 0)
+        local panelScale = Instance.new("UIScale")
+        panelScale.Scale = scale
+        panelScale.Parent = panel
+        panelRefs[#panelRefs + 1] = { panel = panel, uiScale = panelScale }
+        W.panels[#W.panels + 1] = panel
+
         local header = create("TextButton", {
             Size = UDim2.new(1, 0, 0, 22),
             BackgroundColor3 = THEME.HEADER_BG,
             BackgroundTransparency = THEME.HEADER_T,
             Text = "",
             AutoButtonColor = false,
-            LayoutOrder = nextOrder(),
             ZIndex = 61,
-            Parent = list,
+            Parent = panel,
         })
         local headerText = label(header, (opts2.collapsed and "[+] " or "[-] ") .. name, 13, THEME.WHITE, {
             Size = UDim2.new(1, -10, 1, 0),
@@ -960,16 +881,20 @@ function HavocUI.makeClickGui(opts)
             ZIndex = 62,
             Parent = header,
         })
-        local items = create("Frame", {
+        local items = create("ScrollingFrame", {
             Size = UDim2.new(1, 0, 0, 0),
+            Position = UDim2.fromOffset(0, 22),
             BackgroundTransparency = 1,
-            AutomaticSize = Enum.AutomaticSize.Y,
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            ScrollBarThickness = 4,
+            ScrollBarImageColor3 = Color3.fromRGB(110, 110, 110),
+            ScrollBarImageTransparency = 0.2,
             Visible = not opts2.collapsed,
-            LayoutOrder = nextOrder(),
             ZIndex = 61,
-            Parent = list,
+            Parent = panel,
         })
-        create("UIListLayout", {
+        local itemsLayout = create("UIListLayout", {
             Padding = UDim.new(0, 0),
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = items,
@@ -979,22 +904,46 @@ function HavocUI.makeClickGui(opts)
             PaddingRight = UDim.new(0, 2),
             Parent = items,
         })
+
+        local expanded = not opts2.collapsed
+        local function updatePanel()
+            local contentH = itemsLayout.AbsoluteContentSize.Y
+            local visH = expanded and math.min(contentH, maxList) or 0
+            panel.Size = UDim2.fromOffset(width, 22 + visH)
+            items.Size = UDim2.new(1, 0, 0, visH)
+            items.CanvasSize = UDim2.new(0, 0, 0, contentH)
+        end
+        itemsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updatePanel)
+
         header.MouseEnter:Connect(function() tween(header, 0.1, { BackgroundTransparency = 0.1 }) end)
         header.MouseLeave:Connect(function() tween(header, 0.1, { BackgroundTransparency = THEME.HEADER_T }) end)
-        local expanded = not opts2.collapsed
-        header.MouseButton1Click:Connect(function()
-            expanded = not expanded
-            items.Visible = expanded
-            headerText.Text = (expanded and "[-] " or "[+] ") .. name
-        end)
-        local cat = {}
-        cat.header = header
-        cat.items = items
-        cat.setExpanded = function(v)
+
+        local function setExpanded(v)
             expanded = v and true or false
             items.Visible = expanded
             headerText.Text = (expanded and "[-] " or "[+] ") .. name
+            updatePanel()
         end
+        header.MouseButton1Click:Connect(function()
+            setExpanded(not expanded)
+        end)
+
+        -- drag each panel by its own header
+        header.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local sx, sy = input.Position.X, input.Position.Y
+            local ox, oy = panel.Position.X.Offset, panel.Position.Y.Offset
+            HavocUI.startDrag(function(mx, my)
+                panel.Position = UDim2.fromOffset(
+                    math.floor(ox + (mx - sx)), math.floor(oy + (my - sy)))
+            end)
+        end)
+
+        local cat = {}
+        cat.panel = panel
+        cat.header = header
+        cat.items = items
+        cat.setExpanded = setExpanded
         cat.addToggle      = function(_, t, g, s, hk, o) return addToggle(items, t, g, s, hk, o) end
         cat.addSlider      = function(_, t, mn, mx, g, s, o) return addSlider(items, t, mn, mx, g, s, o) end
         cat.addDropdown    = function(_, t, it, g, s, o) return addDropdown(items, t, it, g, s, o) end
@@ -1003,27 +952,34 @@ function HavocUI.makeClickGui(opts)
         cat.addKeybind     = function(_, e, o) return addKeybind(items, e, o) end
         cat.addButton      = function(_, t, f, o) return addButton(items, t, f, o) end
         cat.addLabel       = function(_, t) return addLabel(items, t) end
-        categories[#categories + 1] = cat
-        updateHeight()
+        updatePanel()
         return cat
     end
 
-    updateHeight()
-
-    -- handle
-    W.frame = frame
-    W.titlebar = titlebar
+    -- manager handle (all panels act as one menu)
     W.setScale = function(s)
-        uiScale.Scale = math.clamp(tonumber(s) or 1, 0.6, 1.6)
+        local v = math.clamp(tonumber(s) or 1, 0.6, 1.6)
+        for _, ref in ipairs(panelRefs) do
+            ref.uiScale.Scale = v
+        end
     end
-    W.show = function() frame.Visible = true end
-    W.hide = function() frame.Visible = false end
+    W.show = function()
+        for _, ref in ipairs(panelRefs) do ref.panel.Visible = true end
+    end
+    W.hide = function()
+        for _, ref in ipairs(panelRefs) do ref.panel.Visible = false end
+    end
     W.toggle = function()
-        if frame.Visible then W.hide() else W.show() end
+        if W.isVisible() then W.hide() else W.show() end
     end
-    W.isVisible = function() return frame.Visible end
+    W.isVisible = function()
+        local first = panelRefs[1]
+        return first ~= nil and first.panel.Visible
+    end
     W.destroy = function()
-        pcall(function() frame:Destroy() end)
+        for _, ref in ipairs(panelRefs) do
+            pcall(function() ref.panel:Destroy() end)
+        end
     end
     return W
 end

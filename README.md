@@ -3,8 +3,9 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.2-block — sandbox iteration.** Design language: flat square
-blocks, `[+]`/`[-]` collapsible category lists, tight rows, ON = #55FF55
+**Status: v0.3-detached — sandbox iteration.** Design language: flat square
+blocks, **detached per-category panels** (collapsed `[+] Combat` headers
+spawn their own lists; drag each panel anywhere), tight rows, ON = #55FF55
 green / OFF = #AAAAAA gray, inline `[x]` checkboxes and vanilla-style
 sliders, chat-palette accents (gold #FFFF55, red #FF5555, aqua #55FFFF).
 
@@ -24,9 +25,9 @@ local UI = loadstring(readfile('havoc-ui.luau'), '@havoc-ui')()
 local toaster = UI.makeToaster(screenGui)
 UI.init{ notify = toaster, saveDebounced = saveConfigDebounced }
 
-local gui = UI.makeClickGui{ parent = screenGui, title = "HAVOC HUB",
-    position = UDim2.fromOffset(60, 90), footerHint = "RightShift - toggle" }
-local combat = gui.category("Combat")
+local gui = UI.makeClickGui{ parent = screenGui, width = 180,
+    startX = 60, startY = 80 }
+local combat = gui.category("Combat")   -- one detached, draggable panel each
 combat:addToggle("Auto Parry", getter, setter, hkEntry)
 combat:addSlider("Reach", 1, 10, getter, setter, { step = 0.1 })
 combat:addDropdown("Target", { "Nearest", "Crosshair" }, getter, setter)
@@ -43,9 +44,11 @@ if UI.handleRebindInput(input) then return end
 
 ## API
 
-`makeClickGui{ parent, title, position, width, footerHint, maxListHeight,
-onClose, scale }` -> `{ frame, titlebar, category(name, { collapsed }),
-setScale, show, hide, toggle, isVisible, destroy }`.
+`makeClickGui{ parent, width, layout ("row"|"column"), gap, startX, startY,
+maxListHeight, scale }` -> `{ panels, category(name, { collapsed }),
+setScale, show, hide, toggle, isVisible, destroy }`. Each category is a
+detached panel: the collapsed header (`[+] Name`) spawns its list on click,
+every panel drags by its own header.
 
 Category rows (each returns `{ row, update }`, `addLabel` returns the
 label): `addToggle(text, get, set, hkEntry?, opts)`,
