@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.6-settings"
+HavocUI.VERSION = "v0.6.1-polish"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -297,9 +297,9 @@ function HavocUI.makeClickGui(opts)
     local panelRefs = {}
 
     -- UI scale (same rule as the hub menus: auto up to 1.2x on big displays)
+    local vpY = 0
     local scale = tonumber(opts.scale)
     if not scale then
-        local vpY = 0
         local okS, psz = pcall(function() return parent and parent.AbsoluteSize end)
         if okS and psz then vpY = psz.Y end
         if vpY <= 0 then
@@ -310,6 +310,16 @@ function HavocUI.makeClickGui(opts)
     end
     scale = math.clamp(scale, 0.5, 2)
 
+    -- UIScale grows a panel around its top-left corner, so slots must be
+    -- spaced in SCALED units or neighbouring panels overlap
+    local slotStep = (width + gap) * scale
+
+    -- an expanded list must never run off the bottom of the screen
+    if vpY > 0 then
+        local fit = math.floor((vpY - startY - 40) / scale) - 22
+        maxList = math.min(maxList, math.max(fit, 120))
+    end
+
     -- ========================================================
     -- ROW BUILDERS (used by categories)
     -- ========================================================
@@ -317,6 +327,15 @@ function HavocUI.makeClickGui(opts)
     local function nextOrder()
         order = order + 1
         return order
+    end
+
+    -- measured chip sizing: keeps "[RightShift]" readable instead of clipped
+    local textSvc = game:GetService("TextService")
+    local function chipWidthFor(str)
+        local ok, sz = pcall(function()
+            return textSvc:GetTextSize(str, 10, FONTS.MEDIUM, Vector2.new(240, 16))
+        end)
+        return math.max(24, math.ceil(((ok and sz and sz.X) or 22) + 10))
     end
 
     local function makeRow(parent, height)
@@ -337,13 +356,14 @@ function HavocUI.makeClickGui(opts)
 
     local function keyChip(parent, entry, opts2)
         opts2 = opts2 or {}
+        local chipText = "[" .. ((entry and entry.Key and entry.Key.Name) or "-") .. "]"
         local chip = create("TextButton", {
-            Size = UDim2.fromOffset(38, 16),
+            Size = UDim2.fromOffset(chipWidthFor(chipText), 16),
             Position = UDim2.new(1, -4, 0.5, -8),
             AnchorPoint = Vector2.new(1, 0),
             BackgroundColor3 = THEME.TRACK,
             BackgroundTransparency = 0.25,
-            Text = "[" .. ((entry and entry.Key and entry.Key.Name) or "-") .. "]",
+            Text = chipText,
             TextColor3 = THEME.GRAY,
             TextSize = 10,
             Font = FONTS.MEDIUM,
@@ -353,6 +373,9 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         box(chip, THEME.BORDER, 0.5)
+        chip:GetPropertyChangedSignal("Text"):Connect(function()
+            chip.Size = UDim2.fromOffset(chipWidthFor(chip.Text), 16)
+        end)
         chip.MouseEnter:Connect(function() tween(chip, 0.1, { BackgroundTransparency = 0 }) end)
         chip.MouseLeave:Connect(function() tween(chip, 0.1, { BackgroundTransparency = 0.25 }) end)
         chip.MouseButton1Click:Connect(function()
@@ -369,9 +392,17 @@ function HavocUI.makeClickGui(opts)
     local function addToggle(parent, text, getter, setter, hkEntry, opts2)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
+        local cw = hkEntry and chipWidthFor("[" .. ((hkEntry.Key and hkEntry.Key.Name) or "-") .. "]") or 0
+        local nameReserve
+        if cw > 0 then
+            nameReserve = cw + 12 + (opts2.settings and 24 or 0)
+        else
+            nameReserve = 14 + (opts2.settings and 16 or 0)
+        end
         local name = label(row, text, 12, THEME.GRAY, {
-            Size = UDim2.new(1, (hkEntry and 50 or 14) + (opts2.settings and 16 or 0), 1, 0),
+            Size = UDim2.new(1, -nameReserve, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -390,7 +421,7 @@ function HavocUI.makeClickGui(opts)
             saveTouched()
         end)
         refresh()
-        return { row = row, update = refresh }
+        return { row = row, update = refresh, chipW = cw }
     end
 
     local function addSlider(parent, text, min, max, getter, setter, opts2)
@@ -412,6 +443,7 @@ function HavocUI.makeClickGui(opts)
         local name = label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(0.6, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -523,6 +555,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.55, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -614,6 +647,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.6, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -722,11 +756,12 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.6, -26, 1, 0),
             Position = UDim2.fromOffset(22, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
         local value = label(row, "", 12, THEME.GOLD, {
-            Size = UDim2.new(0.3, -4, 1, 0),
+            Size = UDim2.new(0.3, -8, 1, 0),
             Position = UDim2.new(0.6, 0, 0, 0),
             TextXAlignment = Enum.TextXAlignment.Right,
             ZIndex = 62,
@@ -997,6 +1032,7 @@ function HavocUI.makeClickGui(opts)
         label(row, (entry and entry.Desc) or "Keybind", 12, THEME.GRAY, {
             Size = UDim2.new(1, -50, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -1146,6 +1182,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(0.6, -6, 0, 14),
             Position = UDim2.fromOffset(6, 2),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -1193,6 +1230,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.5, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -1231,6 +1269,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.4, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -1280,6 +1319,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(1, -112, 1, 0),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -1338,6 +1378,7 @@ function HavocUI.makeClickGui(opts)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(0.5, -6, 0, 14),
             Position = UDim2.fromOffset(6, 0),
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 62,
             Parent = row,
         })
@@ -1441,7 +1482,7 @@ function HavocUI.makeClickGui(opts)
             local h = addToggle(target, t, g, s, hk, o)
             registerEntry(cat, t, h.row, group)
             if o and o.settings then
-                h.settings = makeSettingsDrawer(cat, target, h.row, t, o, group, hk ~= nil)
+                h.settings = makeSettingsDrawer(cat, target, h.row, t, o, group, h.chipW or 0)
             end
             return h
         end
@@ -1581,7 +1622,8 @@ function HavocUI.makeClickGui(opts)
         return builder
     end
 
-    makeSettingsDrawer = function(cat, parent, row, name, o, group, hasChip)
+    makeSettingsDrawer = function(cat, parent, row, name, o, group, chipW)
+        chipW = chipW or 0
         local holder = create("Frame", {
             Size = UDim2.new(1, 0, 0, 0),
             BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -1602,7 +1644,7 @@ function HavocUI.makeClickGui(opts)
         })
         local marker = label(row, "[+]", 12, THEME.TEXT_DIM, {
             Size = UDim2.fromOffset(16, 20),
-            Position = UDim2.new(1, hasChip and -58 or -22, 0, 0),
+            Position = UDim2.new(1, chipW > 0 and -(chipW + 28) or -22, 0, 0),
             TextXAlignment = Enum.TextXAlignment.Center,
             ZIndex = 62,
             Parent = row,
@@ -1639,9 +1681,9 @@ function HavocUI.makeClickGui(opts)
     -- ========================================================
     local function slotPosition(slot)
         if layout == "column" then
-            return startX, startY + slot * 24
+            return startX, startY + slot * 24 * scale
         end
-        return startX + slot * (width + gap), startY
+        return startX + slot * slotStep, startY
     end
 
     local function spawnPanel(name, opts2, slot)
