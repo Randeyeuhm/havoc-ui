@@ -60,7 +60,9 @@ label): `addToggle(text, get, set, hkEntry?, opts)`,
 `addSlider(text, min, max, get, set, opts)`,
 `addDropdown(text, items, get, set)`,
 `addMultiSelect(text, items, isOn, setOn)`,
-`addColor(text, get, set, { alpha = true })` (RGB or RGBA slider rows),
+`addColor(text, get, set, { alpha = true })` — full MC-style picker
+(saturation/value square + hue strip + hex input; `alpha = true` adds an
+alpha strip and passes a second 0-255 argument to the setter),
 `addKeybind(entry, { name })`, `addButton(text, fn, { style, confirm })`,
 `addLabel(text)`, `addSeparator()`, `addSection(text)`,
 `addStepper(text, min, max, step, get, set, opts)`,

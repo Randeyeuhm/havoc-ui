@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.5.1-search"
+HavocUI.VERSION = "v0.5.2-search"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -750,97 +750,245 @@ function HavocUI.makeClickGui(opts)
             Parent = parent,
         })
         create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
-        local channels = opts2.alpha and { "R", "G", "B", "A" } or { "R", "G", "B" }
-        local comps = { 255, 255, 255, 255 }
-        local channelRows = {}
-        local function applyChannel()
-            local c = Color3.fromRGB(comps[1], comps[2], comps[3])
-            if opts2.alpha then
-                setter(c, comps[4])
-            else
-                setter(c)
-            end
-            swatch.BackgroundColor3 = c
-            swatch.BackgroundTransparency = opts2.alpha and (1 - comps[4] / 255) or 0
-            value.Text = string.format("#%02X%02X%02X",
-                math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
-            saveTouched()
+        create("UIPadding", {
+            PaddingLeft = UDim.new(0, 4),
+            PaddingRight = UDim.new(0, 4),
+            PaddingTop = UDim.new(0, 4),
+            PaddingBottom = UDim.new(0, 6),
+            Parent = holder,
+        })
+        local function grad(parent2, rotation, color, transparency)
+            local g = Instance.new("UIGradient")
+            g.Rotation = rotation or 0
+            if color then g.Color = color end
+            if transparency then g.Transparency = transparency end
+            g.Parent = parent2
+            return g
         end
-        for ci, ch in ipairs(channels) do
-            local crow = create("TextButton", {
-                Size = UDim2.new(1, 0, 0, 16),
-                BackgroundColor3 = THEME.ROW_HOVER,
-                BackgroundTransparency = 1,
-                Text = "",
-                AutoButtonColor = false,
-                LayoutOrder = ci,
+        local hue, sat, val = 0, 1, 1
+        local alpha = 255
+        -- saturation / value square (hue base + white sat overlay + black val overlay)
+        local square = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 84),
+            BackgroundColor3 = Color3.fromHSV(0, 1, 1),
+            BorderSizePixel = 0,
+            LayoutOrder = 1,
+            ZIndex = 61,
+            Parent = holder,
+        })
+        box(square, THEME.BORDER, 0.3)
+        local satOverlay = create("Frame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = square,
+        })
+        grad(satOverlay, 0, nil, NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1),
+        }))
+        local valOverlay = create("Frame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = square,
+        })
+        grad(valOverlay, 90, nil, NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(1, 0),
+        }))
+        local cursor = create("Frame", {
+            Size = UDim2.fromOffset(5, 5),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 63,
+            Parent = square,
+        })
+        box(cursor, Color3.fromRGB(0, 0, 0), 0.2)
+        -- hue strip
+        create("Frame", { Size = UDim2.new(1, 0, 0, 5), BackgroundTransparency = 1, LayoutOrder = 2, Parent = holder })
+        local hueStrip = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 10),
+            BorderSizePixel = 0,
+            LayoutOrder = 3,
+            ZIndex = 61,
+            Parent = holder,
+        })
+        box(hueStrip, THEME.BORDER, 0.3)
+        grad(hueStrip, 0, ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(1 / 6, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(2 / 6, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(3 / 6, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(4 / 6, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(5 / 6, Color3.fromRGB(255, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
+        }))
+        local hueHandle = create("Frame", {
+            Size = UDim2.fromOffset(3, 14),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 63,
+            Parent = hueStrip,
+        })
+        box(hueHandle, Color3.fromRGB(0, 0, 0), 0.2)
+        -- alpha strip (opt-in)
+        local alphaOverlay, alphaHandle, alphaStrip
+        if opts2.alpha then
+            create("Frame", { Size = UDim2.new(1, 0, 0, 5), BackgroundTransparency = 1, LayoutOrder = 4, Parent = holder })
+            alphaStrip = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 10),
+                BackgroundColor3 = THEME.TRACK,
+                BackgroundTransparency = 0.1,
+                BorderSizePixel = 0,
+                LayoutOrder = 5,
                 ZIndex = 61,
                 Parent = holder,
             })
-            local cfill = create("Frame", {
-                Size = UDim2.new(0, 0, 1, 0),
-                BackgroundColor3 = THEME.FILL,
+            box(alphaStrip, THEME.BORDER, 0.3)
+            alphaOverlay = create("Frame", {
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundColor3 = Color3.new(1, 1, 1),
                 BorderSizePixel = 0,
                 ZIndex = 61,
-                Parent = crow,
+                Parent = alphaStrip,
             })
-            label(crow, ch, 10, THEME.TEXT_DIM, {
-                Size = UDim2.fromOffset(20, 16),
-                Position = UDim2.fromOffset(10, 0),
-                ZIndex = 62,
-                Parent = crow,
+            grad(alphaOverlay, 0, nil, NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(1, 0),
+            }))
+            alphaHandle = create("Frame", {
+                Size = UDim2.fromOffset(3, 14),
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                BackgroundColor3 = Color3.new(1, 1, 1),
+                BorderSizePixel = 0,
+                ZIndex = 63,
+                Parent = alphaStrip,
             })
-            local cval = label(crow, "255", 10, THEME.GOLD, {
-                Size = UDim2.new(0, 30, 1, 0),
-                Position = UDim2.new(1, -34, 0, 0),
-                TextXAlignment = Enum.TextXAlignment.Right,
-                ZIndex = 62,
-                Parent = crow,
-            })
-            local function setChannel(frac, live)
-                comps[ci] = math.clamp(math.floor(frac * 255 + 0.5), 0, 255)
-                tween(cfill, live and 0.03 or 0.1, { Size = UDim2.new(comps[ci] / 255, 0, 1, 0) })
-                cval.Text = tostring(comps[ci])
-                applyChannel()
-            end
-            crow.InputBegan:Connect(function(input)
-                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-                local function chapply(mx)
-                    local pos, size = crow.AbsolutePosition, crow.AbsoluteSize
-                    setChannel((mx - pos.X) / math.max(size.X, 1), true)
-                end
-                chapply(input.Position.X)
-                HavocUI.startDrag(function(mx)
-                    chapply(mx)
-                end)
-            end)
-            channelRows[#channelRows + 1] = { set = setChannel, fill = cfill, val = cval }
+            box(alphaHandle, Color3.fromRGB(0, 0, 0), 0.2)
         end
-        local function update()
+        -- hex input
+        create("Frame", { Size = UDim2.new(1, 0, 0, 5), BackgroundTransparency = 1, LayoutOrder = 6, Parent = holder })
+        local hexRow = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 16),
+            BackgroundTransparency = 1,
+            LayoutOrder = 7,
+            Parent = holder,
+        })
+        label(hexRow, "hex", 11, THEME.TEXT_DIM, {
+            Size = UDim2.fromOffset(26, 16),
+            ZIndex = 62,
+            Parent = hexRow,
+        })
+        local hexBox = create("TextBox", {
+            Size = UDim2.new(1, -30, 0, 16),
+            Position = UDim2.fromOffset(30, 0),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.4,
+            Text = "",
+            TextColor3 = THEME.WHITE,
+            TextSize = 11,
+            Font = FONTS.MEDIUM,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ClearTextOnFocus = false,
+            ZIndex = 62,
+            Parent = hexRow,
+        })
+        box(hexBox, THEME.BORDER, 0.4)
+        local hexPad = Instance.new("UIPadding")
+        hexPad.PaddingLeft = UDim.new(0, 4)
+        hexPad.Parent = hexBox
+        local function hexOf(c)
+            return string.format("#%02X%02X%02X",
+                math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+        end
+        local function sync(fire)
+            local c = Color3.fromHSV(hue, sat, val)
+            square.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+            cursor.Position = UDim2.new(sat, 0, 1 - val, 0)
+            hueHandle.Position = UDim2.new(hue, 0, 0.5, 0)
+            if alphaHandle then alphaHandle.Position = UDim2.new(alpha / 255, 0, 0.5, 0) end
+            if alphaOverlay then alphaOverlay.BackgroundColor3 = c end
+            swatch.BackgroundColor3 = c
+            swatch.BackgroundTransparency = opts2.alpha and (1 - alpha / 255) or 0
+            value.Text = hexOf(c)
+            if not hexBox:IsFocused() then hexBox.Text = hexOf(c) end
+            if fire then
+                if opts2.alpha then
+                    setter(c, alpha)
+                else
+                    setter(c)
+                end
+                saveTouched()
+            end
+        end
+        local function refresh()
             local c, a = getter()
             if typeof(c) ~= "Color3" then c = Color3.new(1, 1, 1) end
-            comps = {
-                math.floor(c.R * 255 + 0.5),
-                math.floor(c.G * 255 + 0.5),
-                math.floor(c.B * 255 + 0.5),
-                math.clamp(math.floor((tonumber(a) or 255) + 0.5), 0, 255),
-            }
-            swatch.BackgroundColor3 = c
-            swatch.BackgroundTransparency = opts2.alpha and (1 - comps[4] / 255) or 0
-            value.Text = string.format("#%02X%02X%02X", comps[1], comps[2], comps[3])
-            for i, ref in ipairs(channelRows) do
-                ref.fill.Size = UDim2.new(comps[i] / 255, 0, 1, 0)
-                ref.val.Text = tostring(comps[i])
-            end
+            hue, sat, val = c:ToHSV()
+            alpha = math.clamp(math.floor((tonumber(a) or 255) + 0.5), 0, 255)
+            sync(false)
         end
+        square.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local function apply(mx, my)
+                local pos, size = square.AbsolutePosition, square.AbsoluteSize
+                sat = math.clamp((mx - pos.X) / math.max(size.X, 1), 0, 1)
+                val = 1 - math.clamp((my - pos.Y) / math.max(size.Y, 1), 0, 1)
+                sync(true)
+            end
+            apply(input.Position.X, input.Position.Y)
+            HavocUI.startDrag(function(mx, my) apply(mx, my) end)
+        end)
+        hueStrip.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local function apply(mx)
+                local pos, size = hueStrip.AbsolutePosition, hueStrip.AbsoluteSize
+                hue = math.clamp((mx - pos.X) / math.max(size.X, 1), 0, 1)
+                sync(true)
+            end
+            apply(input.Position.X)
+            HavocUI.startDrag(function(mx) apply(mx) end)
+        end)
+        if alphaStrip then
+            alphaStrip.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                local function apply(mx)
+                    local pos, size = alphaStrip.AbsolutePosition, alphaStrip.AbsoluteSize
+                    alpha = math.clamp(math.floor((mx - pos.X) / math.max(size.X, 1) * 255 + 0.5), 0, 255)
+                    sync(true)
+                end
+                apply(input.Position.X)
+                HavocUI.startDrag(function(mx) apply(mx) end)
+            end)
+        end
+        hexBox.FocusLost:Connect(function(enterPressed)
+            if enterPressed then
+                hexBox:ReleaseFocus()
+            end
+            local txt = (hexBox.Text:gsub("#", ""):gsub("%s", ""))
+            local r = tonumber(string.sub(txt, 1, 2), 16)
+            local g = tonumber(string.sub(txt, 3, 4), 16)
+            local b = tonumber(string.sub(txt, 5, 6), 16)
+            if #txt == 6 and r and g and b then
+                hue, sat, val = Color3.fromRGB(r, g, b):ToHSV()
+                sync(true)
+            else
+                sync(false)
+            end
+        end)
         row.MouseButton1Click:Connect(function()
             expanded = not expanded
             holder.Visible = expanded
             marker.Text = expanded and "[-]" or "[+]"
-            if expanded then update() end
+            if expanded then refresh() end
         end)
-        update()
-        return { row = row, update = update }
+        refresh()
+        return { row = row, update = refresh }
     end
 
     local function addKeybind(parent, entry, opts2)
