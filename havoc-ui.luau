@@ -1,75 +1,75 @@
 --[[
-    Havoc UI - frosted-glass Roblox GUI toolkit (v0.1)
+    Havoc UI - Minecraft-style cheat GUI toolkit (v0.2-block)
 
     Design language:
-      - translucent dark glass: low-opacity panels over the game world
-      - 1px light borders, rounded corners, soft accent glow
-      - gentle motion: hover tweens, popup grow, toast slide, window rise
+      - flat square blocks, 1px borders, tight rows (no rounding, no glass)
+      - collapsible category lists: [+] Combat / [-] Combat
+      - module rows click to toggle; ON = Minecraft green, OFF = gray
+      - inline option lists: dropdowns, [x] checkboxes, vanilla-style sliders
+      - chat-palette accents: #55FF55 green, #FFFF55 gold, #FF5555 red,
+        #55FFFF aqua, #AAAAAA gray
 
     Wiring:
-        local HavocUI = loadstring(readfile('havoc-ui.luau'), '@havoc-ui')()
+        local UI = loadstring(readfile('havoc-ui.luau'), '@havoc-ui')()
 
-        local toaster = HavocUI.makeToaster(screenGui)
-        HavocUI.init{
+        local toaster = UI.makeToaster(screenGui)
+        UI.init{
             notify           = toaster,
-            save             = saveConfig,
             saveDebounced    = saveConfigDebounced,
-            onKeybindToggled = function(entry) end,
             onKeybindChanged = function(entry) end,
             canBind          = function(entry, key) return true end,
         }
 
-        local win = HavocUI.makeWindow{
-            parent = screenGui, title = "HAVOC HUB", subtitle = "v1.0",
-            tabs = { "General", "Visuals" },
+        local gui = UI.makeClickGui{
+            parent = screenGui, title = "HAVOC HUB",
+            position = UDim2.fromOffset(60, 90),
+            footerHint = "RightShift - toggle",
         }
-        -- build widgets into win.tab(i), collect the handles, then:
-        win.setControls(controls)      -- enables the search bar
+        local combat = gui.category("Combat")
+        combat:addToggle("Auto Parry", getter, setter, hkEntry)
+        combat:addSlider("Reach", 1, 10, getter, setter, { step = 0.1 })
+        combat:addDropdown("Target", { "Nearest", "Crosshair" }, getter, setter)
+        combat:addMultiSelect("Parts", items, isOn, setOn)
+        combat:addColor("Box Color", getter, setter)
+        combat:addKeybind(hkEntry)
+        combat:addButton("Panic", fn)
+        combat:addLabel("small dim note")
 
-        track(HavocUI.attachInput())
+        track(UI.attachInput())
         -- top of your InputBegan handler:
-        if HavocUI.handleRebindInput(input) then return end
+        if UI.handleRebindInput(input) then return end
 
-    Factories (all return { row, update, searchText } unless noted):
-        makeWindow, makeSectionHeader, makeNote, makeToggle, makeSlider,
-        makeButton, makeInput, makeDropdown, makeMultiSelect,
-        makeColorPicker, makeKeybindRow, makeToaster (returns notify fn)
+    Every add* returns { row, update } (addLabel returns the label).
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
-local TextService       = game:GetService("TextService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.1-frost"
+HavocUI.VERSION = "v0.2-block"
 
 -- ============================================================
--- THEME / FONTS
+-- THEME / FONTS  (Minecraft chat palette)
 -- ============================================================
 local THEME = {
-    -- glass surfaces (T = BackgroundTransparency)
-    WIN        = Color3.fromRGB(13, 15, 23),    WIN_T      = 0.10,
-    HEADER     = Color3.fromRGB(19, 21, 32),    HEADER_T   = 0.16,
-    RAIL       = Color3.fromRGB(16, 18, 27),    RAIL_T     = 0.22,
-    PANEL      = Color3.fromRGB(26, 29, 43),    PANEL_T    = 0.30,
-    PANEL_HI   = Color3.fromRGB(35, 39, 56),
-    TRACK      = Color3.fromRGB(30, 33, 47),    TRACK_T    = 0.25,
-    POPUP      = Color3.fromRGB(17, 19, 29),    POPUP_T    = 0.06,
-    -- strokes / lines
-    BORDER     = Color3.fromRGB(255, 255, 255), BORDER_T   = 0.88,
-    LINE       = Color3.fromRGB(255, 255, 255), LINE_T     = 0.94,
-    -- text
-    TEXT       = Color3.fromRGB(238, 241, 250),
-    TEXT_DIM   = Color3.fromRGB(152, 159, 182),
-    TEXT_FAINT = Color3.fromRGB(104, 111, 134),
-    -- accents
-    ACCENT     = Color3.fromRGB(122, 162, 255),
-    ACCENT_HI  = Color3.fromRGB(152, 186, 255),
-    GREEN      = Color3.fromRGB(88, 214, 141),
-    AMBER      = Color3.fromRGB(245, 196, 106),
-    RED        = Color3.fromRGB(232, 108, 122),
-    RED_HI     = Color3.fromRGB(246, 132, 144),
-    KNOB       = Color3.fromRGB(246, 248, 255),
+    BG         = Color3.fromRGB(16, 16, 16),   BG_T         = 0.06,
+    TITLEBAR   = Color3.fromRGB(28, 28, 28),   TITLEBAR_T   = 0,
+    BORDER     = Color3.fromRGB(60, 60, 60),
+    HEADER_BG  = Color3.fromRGB(38, 38, 38),   HEADER_T     = 0.35,
+    ROW_HOVER  = Color3.fromRGB(46, 46, 46),   ROW_HOVER_T  = 0.25,
+    TRACK      = Color3.fromRGB(36, 36, 36),
+    FILL       = Color3.fromRGB(58, 92, 58),
+    FILL_HI    = Color3.fromRGB(72, 112, 72),
+    BTN        = Color3.fromRGB(42, 42, 42),   BTN_T        = 0.2,
+    TEXT       = Color3.fromRGB(224, 224, 224),
+    TEXT_DIM   = Color3.fromRGB(150, 150, 150),
+    GRAY       = Color3.fromRGB(170, 170, 170),
+    GREEN      = Color3.fromRGB(85, 255, 85),
+    GOLD       = Color3.fromRGB(255, 255, 85),
+    RED        = Color3.fromRGB(255, 85, 85),
+    AQUA       = Color3.fromRGB(85, 255, 255),
+    WHITE      = Color3.fromRGB(255, 255, 255),
+    SHADOW     = 0.6,   -- text stroke transparency (the "drop shadow")
 }
 HavocUI.THEME = THEME
 
@@ -81,7 +81,7 @@ local FONTS = {
 HavocUI.FONTS = FONTS
 
 -- ============================================================
--- HOST HOOKS (UILib.init equivalent)
+-- HOST HOOKS
 -- ============================================================
 local HOST = {
     notify = nil, save = nil, saveDebounced = nil,
@@ -118,35 +118,13 @@ local function create(className, props)
     return inst
 end
 
-local function corner(gui, r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, r or 8)
-    c.Parent = gui
-    return c
-end
-
-local function stroke(gui, color, transparency)
+local function box(gui, color, transparency)
     local s = Instance.new("UIStroke")
     s.Color = color or THEME.BORDER
-    s.Transparency = transparency or THEME.BORDER_T
+    s.Transparency = transparency or 0
     s.Thickness = 1
     s.Parent = gui
     return s
-end
-
-local function gradient(gui, from, to, rotation, fromT, toT)
-    local g = Instance.new("UIGradient")
-    if type(from) == "ColorSequence" then
-        g.Color = from
-    else
-        g.Color = ColorSequence.new(from, to)
-    end
-    g.Rotation = rotation or 90
-    if fromT ~= nil or toT ~= nil then
-        g.Transparency = NumberSequence.new(fromT or 0, toT or 0)
-    end
-    g.Parent = gui
-    return g
 end
 
 local function tween(gui, time, props, style, dir)
@@ -156,19 +134,28 @@ local function tween(gui, time, props, style, dir)
     return t
 end
 
--- hover highlight for rows / buttons
-local function hoverable(gui, baseColor, hiColor)
-    gui.BackgroundColor3 = baseColor
-    gui.MouseEnter:Connect(function() tween(gui, 0.12, { BackgroundColor3 = hiColor }) end)
-    gui.MouseLeave:Connect(function() tween(gui, 0.12, { BackgroundColor3 = baseColor }) end)
+-- shadowed text (the Minecraft look: 1px dark outline)
+local function label(parent, str, size, color, props)
+    local base = {
+        BackgroundTransparency = 1,
+        Text = str or "",
+        TextColor3 = color or THEME.TEXT,
+        TextSize = size or 12,
+        Font = FONTS.MEDIUM,
+        TextStrokeTransparency = THEME.SHADOW,
+        TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+    }
+    for k, v in pairs(props or {}) do base[k] = v end
+    return create("TextLabel", base)
 end
 
 -- ============================================================
--- INPUT PLUMBING
+-- INPUT PLUMBING (drags + keybind rebinding)
 -- ============================================================
-local drags = {}          -- active drag handlers: fn(mouseX, mouseY)
-local activePopup = nil   -- { contains(x, y) -> bool, close() }
-local pendingRebind = nil -- { entry, chip, restore }
+local drags = {}
+local pendingRebind = nil
 
 function HavocUI.startDrag(fn)
     table.insert(drags, fn)
@@ -179,19 +166,6 @@ function HavocUI.endDrag(fn)
     for i = #drags, 1, -1 do
         if drags[i] == fn then table.remove(drags, i) end
     end
-end
-
-function HavocUI.setActivePopup(popup)
-    if activePopup and activePopup ~= popup then
-        local prev = activePopup
-        activePopup = nil
-        pcall(prev.close)
-    end
-    activePopup = popup
-end
-
-function HavocUI.clearActivePopup(popup)
-    if activePopup == popup then activePopup = nil end
 end
 
 function HavocUI.attachInput()
@@ -209,17 +183,6 @@ function HavocUI.attachInput()
             table.clear(drags)
         end
     end))
-    table.insert(conns, UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and activePopup then
-            local x, y = input.Position.X, input.Position.Y
-            if not activePopup.contains(x, y) then
-                local prev = activePopup
-                activePopup = nil
-                pcall(prev.close)
-            end
-        end
-    end))
     return {
         disconnect = function()
             for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
@@ -227,12 +190,11 @@ function HavocUI.attachInput()
     }
 end
 
--- ---- keybind rebinding -------------------------------------
 function HavocUI.beginRebind(entry, chip)
     if not entry or not chip then return end
     pendingRebind = { entry = entry, chip = chip, restore = chip.Text }
-    chip.Text = "..."
-    chip.TextColor3 = THEME.ACCENT
+    chip.Text = "[...]"
+    chip.TextColor3 = THEME.GOLD
 end
 
 function HavocUI.handleRebindInput(input)
@@ -242,7 +204,7 @@ function HavocUI.handleRebindInput(input)
     if input.KeyCode == Enum.KeyCode.Escape then
         pendingRebind = nil
         rb.chip.Text = rb.restore
-        rb.chip.TextColor3 = THEME.TEXT_DIM
+        rb.chip.TextColor3 = THEME.GRAY
         return true
     end
     if HOST.canBind and HOST.canBind(rb.entry, input.KeyCode) == false then
@@ -250,8 +212,8 @@ function HavocUI.handleRebindInput(input)
     end
     pendingRebind = nil
     rb.entry.Key = input.KeyCode
-    rb.chip.Text = input.KeyCode.Name
-    rb.chip.TextColor3 = THEME.TEXT_DIM
+    rb.chip.Text = "[" .. input.KeyCode.Name .. "]"
+    rb.chip.TextColor3 = THEME.GRAY
     if HOST.onKeybindChanged then
         pcall(HOST.onKeybindChanged, rb.entry)
     elseif HOST.onKeybindToggled then
@@ -261,982 +223,86 @@ function HavocUI.handleRebindInput(input)
 end
 
 -- ============================================================
--- SHARED ROW PIECES
--- ============================================================
-local function padRow(parent, height)
-    local row = create("Frame", {
-        Size = UDim2.new(1, 0, 0, height or 38),
-        BackgroundTransparency = 1,
-        Parent = parent,
-    })
-    corner(row, 8)
-    return row
-end
-
-local function rowHover(row)
-    row.BackgroundColor3 = THEME.PANEL
-    row.BackgroundTransparency = 1
-    row.MouseEnter:Connect(function() tween(row, 0.12, { BackgroundTransparency = 0.82 }) end)
-    row.MouseLeave:Connect(function() tween(row, 0.12, { BackgroundTransparency = 1 }) end)
-end
-
-local function rowLabel(row, text, widthReserve)
-    local label = create("TextLabel", {
-        Size = UDim2.new(1, -(widthReserve or 110), 1, 0),
-        BackgroundTransparency = 1,
-        Text = text or "",
-        TextColor3 = THEME.TEXT,
-        TextSize = 14,
-        Font = FONTS.MEDIUM,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        Parent = row,
-    })
-    return label
-end
-
-local function keyChip(parent, entry, opts)
-    opts = opts or {}
-    local chip = create("TextButton", {
-        Size = UDim2.fromOffset(78, 22),
-        Position = UDim2.new(1, 0, 0.5, -11),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = THEME.PANEL,
-        BackgroundTransparency = THEME.PANEL_T,
-        Text = (entry and entry.Key and entry.Key.Name) or "-",
-        TextColor3 = THEME.TEXT_DIM,
-        TextSize = 11,
-        Font = FONTS.MEDIUM,
-        AutoButtonColor = false,
-        Parent = parent,
-    })
-    corner(chip, 6)
-    stroke(chip, THEME.BORDER, 0.92)
-    chip.MouseEnter:Connect(function()
-        if not opts.locked then tween(chip, 0.12, { BackgroundColor3 = THEME.PANEL_HI }) end
-    end)
-    chip.MouseLeave:Connect(function()
-        tween(chip, 0.12, { BackgroundColor3 = THEME.PANEL })
-    end)
-    chip.MouseButton1Click:Connect(function()
-        if opts.locked then
-            if opts.lockNote then toast(opts.lockNote) end
-            return
-        end
-        HavocUI.beginRebind(entry, chip)
-    end)
-    return chip
-end
-
--- ============================================================
--- WIDGETS
--- ============================================================
-function HavocUI.makeSectionHeader(parent, text)
-    local row = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 26),
-        BackgroundTransparency = 1,
-        Parent = parent,
-    })
-    local dash = create("Frame", {
-        Size = UDim2.fromOffset(3, 12),
-        Position = UDim2.new(0, 2, 0.5, -6),
-        BackgroundColor3 = THEME.ACCENT,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        Parent = row,
-    })
-    corner(dash, 2)
-    create("TextLabel", {
-        Size = UDim2.new(1, -14, 1, 0),
-        Position = UDim2.fromOffset(12, 0),
-        BackgroundTransparency = 1,
-        Text = string.upper(text or ""),
-        TextColor3 = THEME.TEXT_DIM,
-        TextSize = 11,
-        Font = FONTS.BOLD,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = row,
-    })
-    return { row = row, update = function() end }
-end
-
-function HavocUI.makeNote(parent, text)
-    local label = create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 16),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        Text = text or "",
-        TextColor3 = THEME.TEXT_DIM,
-        TextSize = 12,
-        Font = FONTS.REGULAR,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top,
-        Parent = parent,
-    })
-    return label
-end
-
-function HavocUI.makeToggle(parent, text, getter, setter, hkEntry, opts)
-    local row = padRow(parent, 38)
-    rowLabel(row, text, hkEntry and 172 or 92)
-    rowHover(row)
-    local chip = nil
-    if hkEntry then chip = keyChip(row, hkEntry) end
-
-    local switch = create("TextButton", {
-        Size = UDim2.fromOffset(38, 20),
-        Position = UDim2.new(1, 0, 0.5, -10),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = THEME.TRACK,
-        BackgroundTransparency = THEME.TRACK_T,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = row,
-    })
-    corner(switch, 10)
-    stroke(switch, THEME.BORDER, 0.90)
-    local knob = create("Frame", {
-        Size = UDim2.fromOffset(16, 16),
-        Position = UDim2.new(0, 2, 0.5, -8),
-        BackgroundColor3 = THEME.KNOB,
-        BorderSizePixel = 0,
-        Parent = switch,
-    })
-    corner(knob, 8)
-
-    local function refresh()
-        local on = getter() and true or false
-        tween(switch, 0.15, { BackgroundColor3 = on and THEME.ACCENT or THEME.TRACK })
-        tween(knob, 0.15, {
-            Position = on and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
-        })
-        if chip and hkEntry then
-            chip.TextColor3 = hkEntry.Enabled and THEME.TEXT or THEME.TEXT_FAINT
-        end
-    end
-    switch.MouseButton1Click:Connect(function()
-        setter(not (getter() and true or false))
-        refresh()
-        saveTouched()
-    end)
-    refresh()
-    return { row = row, update = refresh, searchText = text }
-end
-
-function HavocUI.makeSlider(parent, text, min, max, getter, setter, opts)
-    opts = opts or {}
-    local suffix = opts.suffix or ""
-    local step = opts.step
-    local decimals = opts.decimals
-    if decimals == nil then
-        local s = step or ((max - min) / 100)
-        decimals = s >= 1 and 0 or 1
-    end
-    local row = padRow(parent, 46)
-    rowLabel(row, text, 140)
-    rowHover(row)
-    local valueBox = create("TextLabel", {
-        Size = UDim2.fromOffset(110, 20),
-        Position = UDim2.new(1, 0, 0, 2),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = THEME.PANEL,
-        BackgroundTransparency = THEME.PANEL_T,
-        Text = "",
-        TextColor3 = THEME.TEXT,
-        TextSize = 12,
-        Font = FONTS.MEDIUM,
-        Parent = row,
-    })
-    corner(valueBox, 6)
-    stroke(valueBox, THEME.BORDER, 0.92)
-
-    local track = create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 6),
-        Position = UDim2.new(0, 0, 0, 34),
-        BackgroundColor3 = THEME.TRACK,
-        BackgroundTransparency = THEME.TRACK_T,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = row,
-    })
-    corner(track, 3)
-    local fill = create("Frame", {
-        Size = UDim2.new(0, 0, 1, 0),
-        BackgroundColor3 = THEME.ACCENT,
-        BorderSizePixel = 0,
-        Parent = track,
-    })
-    corner(fill, 3)
-    local knob = create("Frame", {
-        Size = UDim2.fromOffset(14, 14),
-        Position = UDim2.new(0, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = THEME.KNOB,
-        BorderSizePixel = 0,
-        ZIndex = 2,
-        Parent = track,
-    })
-    corner(knob, 7)
-
-    local function fmt(v)
-        return string.format("%." .. tostring(decimals) .. "f", v) .. suffix
-    end
-    local function setFrac(frac, live)
-        frac = math.clamp(frac, 0, 1)
-        local v = min + frac * (max - min)
-        if step then v = math.floor(v / step + 0.5) * step end
-        v = math.clamp(v, min, max)
-        tween(fill, live and 0.05 or 0.15, { Size = UDim2.new(frac, 0, 1, 0) })
-        tween(knob, live and 0.05 or 0.15, { Position = UDim2.new(frac, 0, 0.5, 0) })
-        valueBox.Text = fmt(v)
-        return v
-    end
-    local function refresh()
-        local v = math.clamp(tonumber(getter()) or min, min, max)
-        setFrac((v - min) / math.max(max - min, 1e-9))
-    end
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        local function apply(mx)
-            local pos, size = track.AbsolutePosition, track.AbsoluteSize
-            local frac = (mx - pos.X) / math.max(size.X, 1)
-            local v = setFrac(frac, true)
-            setter(v)
-        end
-        apply(input.Position.X)
-        HavocUI.startDrag(function(mx)
-            apply(mx)
-        end)
-    end)
-    refresh()
-    return { row = row, update = refresh, searchText = text }
-end
-
-function HavocUI.makeButton(parent, text, fn, opts)
-    opts = opts or {}
-    local style = opts.style or "glass"
-    local base, hi, textColor
-    if style == "primary" then
-        base, hi, textColor = THEME.ACCENT, THEME.ACCENT_HI, Color3.fromRGB(10, 12, 20)
-    elseif style == "danger" then
-        base, hi, textColor = THEME.RED, THEME.RED_HI, Color3.fromRGB(24, 8, 12)
-    else
-        base, hi, textColor = THEME.PANEL, THEME.PANEL_HI, THEME.TEXT
-    end
-    local btn = create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 32),
-        BackgroundColor3 = base,
-        BackgroundTransparency = (style == "glass") and THEME.PANEL_T or 0.12,
-        Text = text or "",
-        TextColor3 = textColor,
-        TextSize = 13,
-        Font = FONTS.BOLD,
-        AutoButtonColor = false,
-        Parent = parent,
-    })
-    corner(btn, 8)
-    if style == "glass" then stroke(btn, THEME.BORDER, 0.9) end
-    hoverable(btn, base, hi)
-    btn.MouseButton1Click:Connect(function()
-        if fn then pcall(fn) end
-    end)
-    return { row = btn, update = function() end, searchText = text }
-end
-
-function HavocUI.makeInput(parent, text, getter, setter, opts)
-    opts = opts or {}
-    local row = padRow(parent, 38)
-    rowLabel(row, text, (opts.width or 130) + 34)
-    rowHover(row)
-    local box = create("TextBox", {
-        Size = UDim2.fromOffset(opts.width or 130, 26),
-        Position = UDim2.new(1, 0, 0.5, -13),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = THEME.PANEL,
-        BackgroundTransparency = THEME.PANEL_T,
-        Text = "",
-        PlaceholderText = opts.placeholder or "",
-        PlaceholderColor3 = THEME.TEXT_FAINT,
-        TextColor3 = THEME.TEXT,
-        TextSize = 12,
-        Font = FONTS.MEDIUM,
-        ClearTextOnFocus = false,
-        Parent = row,
-    })
-    corner(box, 6)
-    local boxStroke = stroke(box, THEME.BORDER, 0.92)
-    box.Focused:Connect(function()
-        boxStroke.Color = THEME.ACCENT
-        tween(boxStroke, 0.12, { Transparency = 0.4 })
-    end)
-    box.FocusLost:Connect(function()
-        boxStroke.Color = THEME.BORDER
-        tween(boxStroke, 0.12, { Transparency = 0.92 })
-        local v = box.Text
-        if opts.numeric then
-            local n = tonumber(v)
-            if n == nil then box.Text = tostring(getter() or ""); return end
-            v = n
-        end
-        setter(v)
-        saveTouched()
-    end)
-    local function refresh()
-        if box:IsFocused() then return end
-        local v = getter()
-        box.Text = v == nil and "" or tostring(v)
-    end
-    refresh()
-    return { row = row, update = refresh, searchText = text }
-end
-
--- ============================================================
--- POPUPS (dropdown / multiselect / colour picker)
--- ============================================================
-local function popupContains(popup, owner, x, y)
-    local pp, ps = popup.AbsolutePosition, popup.AbsoluteSize
-    local op, os = owner.AbsolutePosition, owner.AbsoluteSize
-    if x >= pp.X and x <= pp.X + ps.X and y >= pp.Y and y <= pp.Y + ps.Y then return true end
-    if x >= op.X and x <= op.X + os.X and y >= op.Y and y <= op.Y + os.Y then return true end
-    return false
-end
-
-local function makePopup(overlay, owner, width, height)
-    local win = overlay.Parent
-    local popup = create("CanvasGroup", {
-        Size = UDim2.fromOffset(width, height),
-        BackgroundColor3 = THEME.POPUP,
-        BackgroundTransparency = THEME.POPUP_T,
-        ZIndex = overlay.ZIndex + 1,
-        GroupTransparency = 1,
-        Parent = overlay,
-    })
-    corner(popup, 10)
-    stroke(popup, THEME.BORDER, 0.86)
-    local px = owner.AbsolutePosition.X - win.AbsolutePosition.X
-    local py = owner.AbsolutePosition.Y - win.AbsolutePosition.Y + owner.AbsoluteSize.Y + 5
-    local maxY = win.AbsoluteSize.Y - height - 8
-    if py > maxY then
-        local above = owner.AbsolutePosition.Y - win.AbsolutePosition.Y - height - 5
-        py = (above >= 8) and above or math.max(8, maxY)
-    end
-    px = math.clamp(px, 8, math.max(8, win.AbsoluteSize.X - width - 8))
-    popup.Position = UDim2.fromOffset(math.floor(px), math.floor(py) - 4)
-    tween(popup, 0.16, {
-        GroupTransparency = 0,
-        Position = UDim2.fromOffset(math.floor(px), math.floor(py)),
-    })
-    return popup
-end
-
-local function closePopupAnim(popup)
-    local t = tween(popup, 0.12, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-    t.Completed:Connect(function() popup:Destroy() end)
-end
-
-local function chipWithValue(parent, width)
-    local chip = create("TextButton", {
-        Size = UDim2.fromOffset(width, 26),
-        Position = UDim2.new(1, 0, 0.5, -13),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = THEME.PANEL,
-        BackgroundTransparency = THEME.PANEL_T,
-        Text = "",
-        AutoButtonColor = false,
-        Parent = parent,
-    })
-    corner(chip, 7)
-    stroke(chip, THEME.BORDER, 0.9)
-    local value = create("TextLabel", {
-        Size = UDim2.new(1, -36, 1, 0),
-        Position = UDim2.fromOffset(10, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        TextColor3 = THEME.TEXT,
-        TextSize = 12,
-        Font = FONTS.MEDIUM,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        Parent = chip,
-    })
-    local chev = create("Frame", {
-        Size = UDim2.fromOffset(14, 14),
-        Position = UDim2.new(1, -24, 0.5, -7),
-        BackgroundTransparency = 1,
-        Parent = chip,
-    })
-    local function bar(x)
-        local b = create("Frame", {
-            Size = UDim2.fromOffset(7, 2),
-            Position = UDim2.new(0, x, 0, 6),
-            BackgroundColor3 = THEME.TEXT_DIM,
-            BorderSizePixel = 0,
-            Parent = chev,
-        })
-        corner(b, 1)
-        return b
-    end
-    bar(1).Rotation = 45
-    bar(6).Rotation = -45
-    chip.MouseEnter:Connect(function() tween(chip, 0.12, { BackgroundColor3 = THEME.PANEL_HI }) end)
-    chip.MouseLeave:Connect(function() tween(chip, 0.12, { BackgroundColor3 = THEME.PANEL }) end)
-    return chip, value
-end
-
-function HavocUI.makeDropdown(parent, text, items, getter, setter, opts)
-    opts = opts or {}
-    local row = padRow(parent, 38)
-    rowLabel(row, text, 196)
-    rowHover(row)
-    local chip, value = chipWithValue(row, 178)
-
-    local popup = nil
-    local function closeMyPopup()
-        if not popup then return end
-        local old = popup
-        popup = nil
-        HavocUI.clearActivePopup(old)
-        closePopupAnim(old)
-    end
-    local function updateChip()
-        value.Text = tostring(getter() or "-")
-    end
-    local function openPopup()
-        local list = type(items) == "function" and items() or items
-        if not opts.overlay or popup then return end
-        local h = math.min(#list, 9) * 28 + 10
-        popup = makePopup(opts.overlay, chip, 178, h)
-        create("UIPadding", {
-            PaddingTop = UDim.new(0, 5), PaddingBottom = UDim.new(0, 5),
-            PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5),
-            Parent = popup,
-        })
-        create("UIListLayout", {
-            Padding = UDim.new(0, 2),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = popup,
-        })
-        local current = tostring(getter())
-        for i, item in ipairs(list) do
-            local isOn = tostring(item) == current
-            local itemBtn = create("TextButton", {
-                Size = UDim2.new(1, 0, 0, 26),
-                BackgroundColor3 = isOn and THEME.PANEL_HI or THEME.PANEL,
-                BackgroundTransparency = isOn and 0.2 or 0.5,
-                Text = tostring(item),
-                TextColor3 = isOn and THEME.TEXT or THEME.TEXT_DIM,
-                TextSize = 12,
-                Font = isOn and FONTS.BOLD or FONTS.MEDIUM,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                AutoButtonColor = false,
-                LayoutOrder = i,
-                Parent = popup,
-            })
-            create("UIPadding", { PaddingLeft = UDim.new(0, 9), Parent = itemBtn })
-            corner(itemBtn, 6)
-            itemBtn.MouseEnter:Connect(function()
-                tween(itemBtn, 0.1, { BackgroundColor3 = THEME.PANEL_HI, BackgroundTransparency = 0.2 })
-            end)
-            itemBtn.MouseLeave:Connect(function()
-                tween(itemBtn, 0.1, {
-                    BackgroundColor3 = isOn and THEME.PANEL_HI or THEME.PANEL,
-                    BackgroundTransparency = isOn and 0.2 or 0.5,
-                })
-            end)
-            itemBtn.MouseButton1Click:Connect(function()
-                setter(item)
-                updateChip()
-                closeMyPopup()
-                saveTouched()
-            end)
-        end
-        local thisPopup = popup
-        HavocUI.setActivePopup({
-            contains = function(x, y)
-                return thisPopup.Parent ~= nil and popupContains(thisPopup, chip, x, y)
-            end,
-            close = function() closeMyPopup() end,
-        })
-    end
-    chip.MouseButton1Click:Connect(function()
-        if popup then closeMyPopup() else openPopup() end
-    end)
-    updateChip()
-    return { row = row, update = updateChip, searchText = text }
-end
-
-function HavocUI.makeMultiSelect(parent, text, items, isOn, setOn, opts)
-    opts = opts or {}
-    local row = padRow(parent, 38)
-    rowLabel(row, text, 196)
-    rowHover(row)
-    local chip, value = chipWithValue(row, 178)
-
-    local popup = nil
-    local itemRefs = {}
-    local function closeMyPopup()
-        if not popup then return end
-        local old = popup
-        popup = nil
-        itemRefs = {}
-        HavocUI.clearActivePopup(old)
-        closePopupAnim(old)
-    end
-    local function summary()
-        local list = type(items) == "function" and items() or items
-        local n = 0
-        for _, it in ipairs(list) do
-            if isOn(it) then n = n + 1 end
-        end
-        if n == 0 then return "none" end
-        if n == #list then return "all" end
-        return n .. " selected"
-    end
-    local function updateChip()
-        value.Text = summary()
-    end
-    local function paintItem(ref)
-        local on = isOn(ref.item) and true or false
-        ref.box.BackgroundColor3 = on and THEME.ACCENT or THEME.PANEL
-        ref.box.BackgroundTransparency = on and 0.05 or 0.5
-        ref.inner.Visible = on
-        ref.label.TextColor3 = on and THEME.TEXT or THEME.TEXT_DIM
-    end
-    local function openPopup()
-        local list = type(items) == "function" and items() or items
-        if not opts.overlay or popup then return end
-        local h = math.min(#list, 9) * 28 + 10
-        popup = makePopup(opts.overlay, chip, 178, h)
-        create("UIPadding", {
-            PaddingTop = UDim.new(0, 5), PaddingBottom = UDim.new(0, 5),
-            PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5),
-            Parent = popup,
-        })
-        create("UIListLayout", {
-            Padding = UDim.new(0, 2),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = popup,
-        })
-        itemRefs = {}
-        for i, item in ipairs(list) do
-            local itemRow = create("TextButton", {
-                Size = UDim2.new(1, 0, 0, 26),
-                BackgroundColor3 = THEME.PANEL,
-                BackgroundTransparency = 0.5,
-                Text = "",
-                AutoButtonColor = false,
-                LayoutOrder = i,
-                Parent = popup,
-            })
-            corner(itemRow, 6)
-            local box = create("Frame", {
-                Size = UDim2.fromOffset(14, 14),
-                Position = UDim2.new(0, 9, 0.5, -7),
-                BackgroundColor3 = THEME.PANEL,
-                BackgroundTransparency = 0.5,
-                BorderSizePixel = 0,
-                Parent = itemRow,
-            })
-            corner(box, 4)
-            stroke(box, THEME.BORDER, 0.85)
-            local inner = create("Frame", {
-                Size = UDim2.fromOffset(6, 6),
-                Position = UDim2.new(0.5, -3, 0.5, -3),
-                BackgroundColor3 = THEME.KNOB,
-                BorderSizePixel = 0,
-                Parent = box,
-            })
-            corner(inner, 2)
-            local label = create("TextLabel", {
-                Size = UDim2.new(1, -34, 1, 0),
-                Position = UDim2.fromOffset(30, 0),
-                BackgroundTransparency = 1,
-                Text = tostring(item),
-                TextColor3 = THEME.TEXT_DIM,
-                TextSize = 12,
-                Font = FONTS.MEDIUM,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = itemRow,
-            })
-            local ref = { item = item, box = box, inner = inner, label = label }
-            itemRefs[#itemRefs + 1] = ref
-            paintItem(ref)
-            itemRow.MouseEnter:Connect(function()
-                tween(itemRow, 0.1, { BackgroundTransparency = 0.25 })
-            end)
-            itemRow.MouseLeave:Connect(function()
-                tween(itemRow, 0.1, { BackgroundTransparency = 0.5 })
-            end)
-            itemRow.MouseButton1Click:Connect(function()
-                setOn(item, not (isOn(item) and true or false))
-                paintItem(ref)
-                updateChip()
-                saveTouched()
-            end)
-        end
-        local thisPopup = popup
-        HavocUI.setActivePopup({
-            contains = function(x, y)
-                return thisPopup.Parent ~= nil and popupContains(thisPopup, chip, x, y)
-            end,
-            close = function() closeMyPopup() end,
-        })
-    end
-    chip.MouseButton1Click:Connect(function()
-        if popup then closeMyPopup() else openPopup() end
-    end)
-    updateChip()
-    return { row = row, update = function() updateChip() end, searchText = text }
-end
-
-function HavocUI.makeColorPicker(parent, text, getter, setter, opts)
-    opts = opts or {}
-    local row = padRow(parent, 38)
-    rowLabel(row, text, 160)
-    rowHover(row)
-    local chip = create("TextButton", {
-        Size = UDim2.fromOffset(104, 26),
-        Position = UDim2.new(1, 0, 0.5, -13),
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        Text = "",
-        TextSize = 11,
-        Font = FONTS.MEDIUM,
-        AutoButtonColor = false,
-        Parent = row,
-    })
-    corner(chip, 7)
-    stroke(chip, THEME.BORDER, 0.8)
-
-    local popup = nil
-    local h, s, v = 0.6, 1, 1
-    local syncing = false
-    local function chipText(color)
-        local lum = 0.299 * color.R + 0.587 * color.G + 0.114 * color.B
-        chip.TextColor3 = lum > 0.55 and Color3.fromRGB(12, 14, 22) or Color3.fromRGB(244, 246, 252)
-        chip.Text = color:ToHex()
-    end
-    local function readColor()
-        local c = getter()
-        if typeof(c) ~= "Color3" then c = Color3.new(1, 1, 1) end
-        h, s, v = c:ToHSV()
-        return c
-    end
-    local function closeMyPopup()
-        if not popup then return end
-        local old = popup
-        popup = nil
-        HavocUI.clearActivePopup(old)
-        closePopupAnim(old)
-    end
-    local function openPopup()
-        if not opts.overlay or popup then return end
-        readColor()
-        popup = makePopup(opts.overlay, chip, 214, 224)
-        create("UIPadding", {
-            PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-            PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
-            Parent = popup,
-        })
-        local sv = create("TextButton", {
-            Size = UDim2.fromOffset(172, 150),
-            BackgroundColor3 = Color3.fromHSV(h, 1, 1),
-            Text = "",
-            AutoButtonColor = false,
-            Parent = popup,
-        })
-        corner(sv, 7)
-        local white = create("Frame", {
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-            BorderSizePixel = 0,
-            Parent = sv,
-        })
-        corner(white, 7)
-        gradient(white, Color3.new(1, 1, 1), Color3.new(1, 1, 1), 0, 0, 1)
-        local black = create("Frame", {
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-            BorderSizePixel = 0,
-            Parent = sv,
-        })
-        corner(black, 7)
-        gradient(black, Color3.new(0, 0, 0), Color3.new(0, 0, 0), 90, 1, 0)
-        local cursor = create("Frame", {
-            Size = UDim2.fromOffset(12, 12),
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ZIndex = 3,
-            Parent = sv,
-        })
-        corner(cursor, 6)
-        local cs = stroke(cursor, Color3.fromRGB(255, 255, 255), 0.15)
-        cs.Thickness = 2
-
-        local hueBar = create("TextButton", {
-            Size = UDim2.fromOffset(16, 150),
-            Position = UDim2.fromOffset(180, 0),
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            Text = "",
-            AutoButtonColor = false,
-            Parent = popup,
-        })
-        corner(hueBar, 8)
-        gradient(hueBar, ColorSequence.new({
-            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
-            ColorSequenceKeypoint.new(1 / 6, Color3.fromRGB(255, 255, 0)),
-            ColorSequenceKeypoint.new(2 / 6, Color3.fromRGB(0, 255, 0)),
-            ColorSequenceKeypoint.new(3 / 6, Color3.fromRGB(0, 255, 255)),
-            ColorSequenceKeypoint.new(4 / 6, Color3.fromRGB(0, 0, 255)),
-            ColorSequenceKeypoint.new(5 / 6, Color3.fromRGB(255, 0, 255)),
-            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
-        }), 90)
-        local hueCursor = create("Frame", {
-            Size = UDim2.new(1, 4, 0, 4),
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BorderSizePixel = 0,
-            ZIndex = 3,
-            Parent = hueBar,
-        })
-        corner(hueCursor, 2)
-        stroke(hueCursor, Color3.fromRGB(0, 0, 0), 0.6)
-
-        local hexBox = create("TextBox", {
-            Size = UDim2.fromOffset(88, 26),
-            Position = UDim2.fromOffset(0, 162),
-            BackgroundColor3 = THEME.PANEL,
-            BackgroundTransparency = THEME.PANEL_T,
-            Text = "",
-            TextColor3 = THEME.TEXT,
-            TextSize = 12,
-            Font = FONTS.MEDIUM,
-            ClearTextOnFocus = false,
-            Parent = popup,
-        })
-        corner(hexBox, 6)
-        stroke(hexBox, THEME.BORDER, 0.9)
-        create("TextLabel", {
-            Size = UDim2.new(1, -110, 0, 26),
-            Position = UDim2.fromOffset(98, 162),
-            BackgroundTransparency = 1,
-            Text = "drag the square + bar",
-            TextColor3 = THEME.TEXT_FAINT,
-            TextSize = 10,
-            Font = FONTS.REGULAR,
-            TextXAlignment = Enum.TextXAlignment.Right,
-            Parent = popup,
-        })
-
-        local function paint(apply)
-            sv.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-            cursor.Position = UDim2.new(s, -6, 1 - v, -6)
-            hueCursor.Position = UDim2.new(0.5, 0, h, 0)
-            local c = Color3.fromHSV(h, s, v)
-            if not hexBox:IsFocused() then hexBox.Text = c:ToHex() end
-            if apply then
-                syncing = true
-                setter(c)
-                syncing = false
-                chipText(c)
-                chip.BackgroundColor3 = c
-                saveTouched()
-            end
-        end
-        sv.InputBegan:Connect(function(input)
-            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-            local function apply(mx, my)
-                local pos, size = sv.AbsolutePosition, sv.AbsoluteSize
-                s = math.clamp((mx - pos.X) / math.max(size.X, 1), 0, 1)
-                v = 1 - math.clamp((my - pos.Y) / math.max(size.Y, 1), 0, 1)
-                paint(true)
-            end
-            apply(input.Position.X, input.Position.Y)
-            HavocUI.startDrag(function(mx, my)
-                apply(mx, my)
-            end)
-        end)
-        hueBar.InputBegan:Connect(function(input)
-            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-            local function apply(_mx, my)
-                local pos, size = hueBar.AbsolutePosition, hueBar.AbsoluteSize
-                h = math.clamp((my - pos.Y) / math.max(size.Y, 1), 0, 1)
-                paint(true)
-            end
-            apply(input.Position.X, input.Position.Y)
-            HavocUI.startDrag(function(mx, my)
-                apply(mx, my)
-            end)
-        end)
-        hexBox.FocusLost:Connect(function()
-            local c = Color3.fromHex(hexBox.Text)
-            syncing = true
-            setter(c)
-            syncing = false
-            h, s, v = c:ToHSV()
-            paint(false)
-            chipText(c)
-            chip.BackgroundColor3 = c
-            saveTouched()
-        end)
-        paint(false)
-        local thisPopup = popup
-        HavocUI.setActivePopup({
-            contains = function(x, y)
-                return thisPopup.Parent ~= nil and popupContains(thisPopup, chip, x, y)
-            end,
-            close = function() closeMyPopup() end,
-        })
-    end
-    chip.MouseButton1Click:Connect(function()
-        if popup then closeMyPopup() else openPopup() end
-    end)
-    local function refresh()
-        if syncing then return end
-        local c = readColor()
-        chipText(c)
-        chip.BackgroundColor3 = c
-    end
-    refresh()
-    return { row = row, update = refresh, searchText = text }
-end
-
-function HavocUI.makeKeybindRow(parent, entry, opts)
-    opts = opts or {}
-    local row = padRow(parent, 38)
-    rowLabel(row, (entry and entry.Desc) or "Keybind", 110)
-    rowHover(row)
-    local chip = keyChip(row, entry, opts)
-    local function refresh()
-        chip.Text = (entry and entry.Key and entry.Key.Name) or "-"
-        local enabled = not entry or entry.Enabled ~= false
-        chip.TextColor3 = enabled and THEME.TEXT or THEME.TEXT_FAINT
-    end
-    refresh()
-    return { row = row, update = refresh, searchText = entry and entry.Desc }
-end
-
--- ============================================================
--- TOASTER
+-- TOASTER  (flat chat lines)
 -- ============================================================
 function HavocUI.makeToaster(parent)
     local holder = create("Frame", {
-        Size = UDim2.new(0, 360, 0, 500),
-        Position = UDim2.new(0.5, -180, 0, 12),
+        Size = UDim2.new(0, 420, 0, 400),
+        Position = UDim2.new(0.5, -210, 0, 8),
         BackgroundTransparency = 1,
         ZIndex = 300,
         Parent = parent,
     })
     create("UIListLayout", {
-        Padding = UDim.new(0, 6),
+        Padding = UDim.new(0, 3),
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
         Parent = holder,
     })
     local order = 0
     local KINDS = {
-        info = THEME.ACCENT,
-        ok = THEME.GREEN,
-        warn = THEME.AMBER,
-        err = THEME.RED,
+        info = THEME.AQUA,
+        ok   = THEME.GREEN,
+        warn = THEME.GOLD,
+        err  = THEME.RED,
     }
     local function notify(text, opts)
         opts = opts or {}
         text = tostring(text or "")
         order = order + 1
-        local accent = KINDS[opts.kind or "info"] or THEME.ACCENT
-        local bounds = TextService:GetTextSize(text, 13, FONTS.MEDIUM, Vector2.new(270, 600))
-        local w = math.clamp(bounds.X + 60, 180, 340)
-        local h = math.max(bounds.Y + 20, 38)
-        local toast = create("CanvasGroup", {
-            Size = UDim2.fromOffset(w, h),
-            BackgroundColor3 = THEME.WIN,
-            BackgroundTransparency = THEME.WIN_T,
-            GroupTransparency = 1,
+        local line = create("Frame", {
+            Size = UDim2.new(0, 380, 0, 20),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.35,
             LayoutOrder = order,
+            ZIndex = 300,
             Parent = holder,
         })
-        corner(toast, 10)
-        stroke(toast, THEME.BORDER, 0.86)
-        local bar = create("Frame", {
-            Size = UDim2.fromOffset(3, h - 16),
-            Position = UDim2.new(0, 10, 0.5, -(h - 16) / 2),
-            BackgroundColor3 = accent,
-            BorderSizePixel = 0,
-            Parent = toast,
+        box(line, THEME.BORDER, 0.4)
+        label(line, "[Havoc]", 12, KINDS[opts.kind or "info"] or THEME.AQUA, {
+            Size = UDim2.new(0, 52, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            Font = FONTS.BOLD,
+            ZIndex = 301,
+            Parent = line,
         })
-        corner(bar, 2)
-        create("TextLabel", {
-            Size = UDim2.new(1, -56, 1, 0),
-            Position = UDim2.fromOffset(22, 0),
-            BackgroundTransparency = 1,
-            Text = text,
-            TextColor3 = THEME.TEXT,
-            TextSize = 13,
-            Font = FONTS.MEDIUM,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextYAlignment = Enum.TextYAlignment.Center,
-            TextWrapped = true,
-            Parent = toast,
+        label(line, text, 12, Color3.fromRGB(255, 255, 255), {
+            Size = UDim2.new(1, -62, 1, 0),
+            Position = UDim2.fromOffset(56, 0),
+            ZIndex = 301,
+            Parent = line,
         })
-        local sc = create("UIScale", { Scale = 0.96, Parent = toast })
-        tween(toast, 0.18, { GroupTransparency = 0 })
-        tween(sc, 0.18, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        task.delay(opts.duration or 2.6, function()
-            if toast.Parent == nil then return end
-            local t = tween(toast, 0.16, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-            t.Completed:Connect(function() toast:Destroy() end)
+        task.delay(opts.duration or 3.0, function()
+            if line.Parent then line:Destroy() end
         end)
-        return toast
+        return line
     end
     return notify
 end
 
 -- ============================================================
--- WINDOW
+-- CLICK GUI
 -- ============================================================
-function HavocUI.makeWindow(opts)
+function HavocUI.makeClickGui(opts)
     opts = opts or {}
-    local tabsList = opts.tabs or {}
     local W = {}
+    local width = opts.width or 280
+    local footerH = opts.footerHint and 16 or 0
+    local chromeH = 24 + footerH
+    local maxList = opts.maxListHeight or 480
+    local titleH = 24
 
-    local frame = create("CanvasGroup", {
-        Name = opts.name or "HavocUIWindow",
-        Size = opts.size or UDim2.fromOffset(520, 640),
-        Position = opts.position or UDim2.fromOffset(32, 48),
-        BackgroundColor3 = THEME.WIN,
-        BackgroundTransparency = THEME.WIN_T,
-        ClipsDescendants = false,
-        ZIndex = opts.zindex or 40,
-        Parent = opts.parent,
-    })
-    corner(frame, 14)
-    stroke(frame, THEME.BORDER, 0.84)
-
-    local sheen = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 96),
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    local frame = create("Frame", {
+        Name = opts.name or "HavocClickGui",
+        Size = UDim2.fromOffset(width, chromeH + 24),
+        Position = opts.position or UDim2.fromOffset(40, 60),
+        BackgroundColor3 = THEME.BG,
+        BackgroundTransparency = THEME.BG_T,
         BorderSizePixel = 0,
-        ZIndex = 0,
-        Parent = frame,
-    })
-    corner(sheen, 14)
-    gradient(sheen, Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 255, 255), 90, 0.965, 1)
-
-    local glow = create("Frame", {
-        Name = "Glow",
-        Size = frame.Size + UDim2.fromOffset(14, 14),
-        Position = frame.Position - UDim2.fromOffset(7, 7),
-        BackgroundColor3 = THEME.ACCENT,
-        BackgroundTransparency = 0.92,
-        ZIndex = (opts.zindex or 40) - 1,
+        ZIndex = opts.zindex or 60,
         Parent = opts.parent,
     })
-    corner(glow, 20)
+    box(frame, THEME.BORDER, 0)
 
     -- UI scale (same rule as the hub menus: auto up to 1.2x on big displays)
     local scale = tonumber(opts.scale)
@@ -1252,437 +318,711 @@ function HavocUI.makeWindow(opts)
     end
     scale = math.clamp(scale, 0.5, 2)
     local uiScale = Instance.new("UIScale")
+    uiScale.Scale = scale
     uiScale.Parent = frame
 
-    -- header
-    local header = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 42),
-        BackgroundColor3 = THEME.HEADER,
-        BackgroundTransparency = THEME.HEADER_T,
-        ZIndex = 2,
+    -- title bar
+    local titlebar = create("Frame", {
+        Size = UDim2.new(1, 0, 0, titleH),
+        BackgroundColor3 = THEME.TITLEBAR,
+        BorderSizePixel = 0,
+        ZIndex = 61,
         Parent = frame,
     })
-    corner(header, 14)
-    create("Frame", {
-        Size = UDim2.new(1, 0, 0, 16),
-        Position = UDim2.new(0, 0, 1, -16),
-        BackgroundColor3 = THEME.HEADER,
-        BackgroundTransparency = THEME.HEADER_T,
-        BorderSizePixel = 0,
-        ZIndex = 2,
-        Parent = header,
-    })
-    local dot = create("Frame", {
-        Size = UDim2.fromOffset(8, 8),
-        Position = UDim2.new(0, 16, 0.5, -4),
-        BackgroundColor3 = THEME.ACCENT,
-        BorderSizePixel = 0,
-        ZIndex = 3,
-        Parent = header,
-    })
-    corner(dot, 4)
-    local dotGlow = create("Frame", {
-        Size = UDim2.fromOffset(16, 16),
-        Position = UDim2.new(0.5, -8, 0.5, -8),
-        BackgroundColor3 = THEME.ACCENT,
-        BackgroundTransparency = 0.72,
-        BorderSizePixel = 0,
-        ZIndex = 2,
-        Parent = dot,
-    })
-    corner(dotGlow, 8)
-    create("TextLabel", {
-        Size = UDim2.new(1, -180, 1, 0),
-        Position = UDim2.fromOffset(32, 0),
-        BackgroundTransparency = 1,
-        Text = opts.title or "HAVOC",
-        TextColor3 = THEME.TEXT,
-        TextSize = 15,
+    label(titlebar, opts.title or "HAVOC HUB", 13, THEME.WHITE, {
+        Size = UDim2.new(1, -40, 1, 0),
+        Position = UDim2.fromOffset(6, 0),
         Font = FONTS.BOLD,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        ZIndex = 3,
-        Parent = header,
+        ZIndex = 62,
+        Parent = titlebar,
     })
-    if opts.subtitle then
-        create("TextLabel", {
-            Size = UDim2.new(0, 190, 1, 0),
-            Position = UDim2.new(1, -72, 0, 0),
-            AnchorPoint = Vector2.new(1, 0),
-            BackgroundTransparency = 1,
-            Text = tostring(opts.subtitle),
-            TextColor3 = THEME.TEXT_DIM,
-            TextSize = 11,
-            Font = FONTS.MEDIUM,
-            TextXAlignment = Enum.TextXAlignment.Right,
-            TextYAlignment = Enum.TextYAlignment.Center,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            ZIndex = 3,
-            Parent = header,
-        })
-    end
-    if opts.closable ~= false then
-        local closeBtn = create("TextButton", {
-            Size = UDim2.fromOffset(26, 26),
-            Position = UDim2.new(1, -12, 0.5, -13),
-            AnchorPoint = Vector2.new(1, 0),
-            BackgroundColor3 = THEME.RED,
-            BackgroundTransparency = 0.75,
-            Text = "",
-            AutoButtonColor = false,
-            ZIndex = 3,
-            Parent = header,
-        })
-        corner(closeBtn, 8)
-        for i = 1, 2 do
-            local arm = create("Frame", {
-                Size = UDim2.fromOffset(11, 2),
-                Position = UDim2.new(0.5, 0, 0.5, 0),
-                AnchorPoint = Vector2.new(0.5, 0.5),
-                BackgroundColor3 = THEME.KNOB,
-                BorderSizePixel = 0,
-                Rotation = (i == 1) and 45 or -45,
-                ZIndex = 4,
-                Parent = closeBtn,
-            })
-            corner(arm, 1)
+    local closeBtn = create("TextButton", {
+        Size = UDim2.fromOffset(20, titleH),
+        Position = UDim2.new(1, -20, 0, 0),
+        BackgroundColor3 = THEME.BG,
+        BackgroundTransparency = 1,
+        Text = "x",
+        TextColor3 = THEME.RED,
+        TextSize = 14,
+        Font = FONTS.BOLD,
+        TextStrokeTransparency = THEME.SHADOW,
+        AutoButtonColor = false,
+        ZIndex = 62,
+        Parent = titlebar,
+    })
+    closeBtn.MouseEnter:Connect(function()
+        closeBtn.BackgroundTransparency = 0.4
+        closeBtn.BackgroundColor3 = Color3.fromRGB(90, 40, 40)
+    end)
+    closeBtn.MouseLeave:Connect(function()
+        closeBtn.BackgroundTransparency = 1
+    end)
+    closeBtn.MouseButton1Click:Connect(function()
+        if opts.onClose then
+            pcall(opts.onClose)
+        else
+            W.hide()
         end
-        closeBtn.MouseEnter:Connect(function()
-            tween(closeBtn, 0.12, { BackgroundColor3 = THEME.RED_HI, BackgroundTransparency = 0.45 })
-        end)
-        closeBtn.MouseLeave:Connect(function()
-            tween(closeBtn, 0.12, { BackgroundColor3 = THEME.RED, BackgroundTransparency = 0.75 })
-        end)
-        closeBtn.MouseButton1Click:Connect(function()
-            if opts.onClose then
-                pcall(opts.onClose)
-            else
-                W.hide()
-            end
-        end)
-    end
-    create("Frame", {
-        Size = UDim2.new(1, 0, 0, 1),
-        Position = UDim2.new(0, 0, 0, 42),
-        BackgroundColor3 = THEME.LINE,
-        BackgroundTransparency = THEME.LINE_T,
+    end)
+
+    -- scrollable list
+    local list = create("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, -chromeH),
+        Position = UDim2.fromOffset(0, titleH),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ZIndex = 3,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = Color3.fromRGB(110, 110, 110),
+        ScrollBarImageTransparency = 0.2,
+        ZIndex = 61,
         Parent = frame,
     })
+    local listLayout = create("UIListLayout", {
+        Padding = UDim.new(0, 0),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = list,
+    })
+    create("UIPadding", { PaddingRight = UDim.new(0, 4), Parent = list })
 
-    -- footer
-    local footerH = opts.footerHint and 28 or 0
+    local function updateHeight()
+        local contentH = listLayout.AbsoluteContentSize.Y
+        local visH = math.min(contentH, maxList)
+        frame.Size = UDim2.fromOffset(width, chromeH + visH)
+        list.CanvasSize = UDim2.new(0, 0, 0, contentH)
+    end
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight)
+
     if opts.footerHint then
-        local footer = create("Frame", {
-            Size = UDim2.new(1, 0, 0, 28),
-            Position = UDim2.new(0, 0, 1, -28),
-            BackgroundTransparency = 1,
-            ZIndex = 3,
+        label(frame, opts.footerHint, 10, Color3.fromRGB(120, 120, 120), {
+            Size = UDim2.new(1, 0, 0, footerH),
+            Position = UDim2.new(0, 0, 1, -footerH),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 62,
             Parent = frame,
         })
-        create("Frame", {
-            Size = UDim2.new(1, 0, 0, 1),
-            BackgroundColor3 = THEME.LINE,
-            BackgroundTransparency = THEME.LINE_T,
-            BorderSizePixel = 0,
-            ZIndex = 3,
-            Parent = footer,
-        })
-        create("TextLabel", {
-            Size = UDim2.new(1, -200, 1, 0),
-            Position = UDim2.fromOffset(14, 0),
-            BackgroundTransparency = 1,
-            Text = opts.footerHint,
-            TextColor3 = THEME.TEXT_FAINT,
-            TextSize = 11,
-            Font = FONTS.MEDIUM,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-            Parent = footer,
-        })
-        if opts.footerRight then
-            create("TextLabel", {
-                Size = UDim2.new(0, 190, 1, 0),
-                Position = UDim2.new(1, -14, 0, 0),
-                AnchorPoint = Vector2.new(1, 0),
-                BackgroundTransparency = 1,
-                Text = tostring(opts.footerRight),
-                TextColor3 = THEME.TEXT_FAINT,
-                TextSize = 11,
-                Font = FONTS.MEDIUM,
-                TextXAlignment = Enum.TextXAlignment.Right,
-                ZIndex = 3,
-                Parent = footer,
-            })
-        end
     end
 
-    -- search bar (created on demand by setControls)
-    local search = nil
-    local body = create("Frame", {
-        BackgroundTransparency = 1,
-        ZIndex = 2,
-        Parent = frame,
-    })
-    local function relayout()
-        local top = 52 + (search and 38 or 0)
-        body.Position = UDim2.fromOffset(10, top)
-        body.Size = UDim2.new(1, -20, 1, -(top + footerH + 12))
-    end
-    relayout()
-
-    -- rail + pages
-    local rail = create("Frame", {
-        Size = UDim2.new(0, 128, 1, 0),
-        BackgroundColor3 = THEME.RAIL,
-        BackgroundTransparency = THEME.RAIL_T,
-        ZIndex = 2,
-        Parent = body,
-    })
-    corner(rail, 10)
-    create("UIListLayout", {
-        Padding = UDim.new(0, 4),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = rail,
-    })
-    create("UIPadding", {
-        PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
-        PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
-        Parent = rail,
-    })
-    local content = create("Frame", {
-        Size = UDim2.new(1, -138, 1, 0),
-        Position = UDim2.fromOffset(138, 0),
-        BackgroundTransparency = 1,
-        ZIndex = 2,
-        Parent = body,
-    })
-    local pages = {}
-    local tabRefs = {}
-    for i, name in ipairs(tabsList) do
-        local page = create("ScrollingFrame", {
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
-            ScrollBarThickness = 3,
-            ScrollBarImageColor3 = THEME.TEXT_FAINT,
-            ScrollBarImageTransparency = 0.4,
-            ZIndex = 2,
-            Visible = (i == 1),
-            Parent = content,
-        })
-        local lay = create("UIListLayout", {
-            Padding = UDim.new(0, 6),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = page,
-        })
-        create("UIPadding", {
-            PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 10),
-            PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 8),
-            Parent = page,
-        })
-        lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            page.CanvasSize = UDim2.new(0, 0, 0, lay.AbsoluteContentSize.Y + 16)
-        end)
-        pages[i] = page
-
-        local btn = create("TextButton", {
-            Size = UDim2.new(1, 0, 0, 30),
-            BackgroundColor3 = THEME.PANEL,
-            BackgroundTransparency = 1,
-            Text = name,
-            TextColor3 = THEME.TEXT_DIM,
-            TextSize = 13,
-            Font = FONTS.MEDIUM,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            AutoButtonColor = false,
-            LayoutOrder = i,
-            ZIndex = 3,
-            Parent = rail,
-        })
-        corner(btn, 8)
-        create("UIPadding", { PaddingLeft = UDim.new(0, 12), Parent = btn })
-        local bar = create("Frame", {
-            Size = UDim2.fromOffset(3, 16),
-            Position = UDim2.new(0, 4, 0.5, -8),
-            BackgroundColor3 = THEME.ACCENT,
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ZIndex = 4,
-            Parent = btn,
-        })
-        corner(bar, 2)
-        tabRefs[i] = { btn = btn, bar = bar }
-        btn.MouseEnter:Connect(function()
-            if pages[i].Visible then return end
-            tween(btn, 0.12, { BackgroundTransparency = 0.75 })
-        end)
-        btn.MouseLeave:Connect(function()
-            if pages[i].Visible then return end
-            tween(btn, 0.12, { BackgroundTransparency = 1 })
-        end)
-        btn.MouseButton1Click:Connect(function() W.setTab(i) end)
-    end
-
-    function W.setTab(i)
-        if type(i) == "string" then
-            for k, name in ipairs(tabsList) do
-                if name == i then
-                    i = k
-                    break
-                end
-            end
-        end
-        if not pages[i] then return end
-        for k, page in pairs(pages) do
-            page.Visible = (k == i)
-        end
-        for k, ref in pairs(tabRefs) do
-            local on = (k == i)
-            tween(ref.btn, 0.14, { BackgroundTransparency = on and 0.72 or 1 })
-            ref.btn.TextColor3 = on and THEME.TEXT or THEME.TEXT_DIM
-            tween(ref.bar, 0.14, { BackgroundTransparency = on and 0.05 or 1 })
-        end
-        if opts.onTabChanged then pcall(opts.onTabChanged, tabsList[i] or i) end
-    end
-
-    W.setTab(1)
-
-    -- controls search
-    local controls = {}
-    local function applyFilter()
-        if not search then return end
-        local q = string.lower(search.Text or "")
-        for _, handle in ipairs(controls) do
-            local row = type(handle) == "table" and handle.row or nil
-            if row and row.Parent then
-                if q == "" or handle.searchText == nil then
-                    row.Visible = true
-                else
-                    row.Visible = string.find(string.lower(tostring(handle.searchText)), q, 1, true) ~= nil
-                end
-            end
-        end
-    end
-    function W.setControls(list)
-        controls = list or {}
-        if #controls > 0 and not search then
-            search = create("TextBox", {
-                Size = UDim2.new(1, -28, 0, 30),
-                Position = UDim2.fromOffset(14, 50),
-                BackgroundColor3 = THEME.PANEL,
-                BackgroundTransparency = THEME.PANEL_T,
-                Text = "",
-                PlaceholderText = "search...",
-                PlaceholderColor3 = THEME.TEXT_FAINT,
-                TextColor3 = THEME.TEXT,
-                TextSize = 12,
-                Font = FONTS.MEDIUM,
-                ClearTextOnFocus = false,
-                ZIndex = 3,
-                Parent = frame,
-            })
-            corner(search, 8)
-            stroke(search, THEME.BORDER, 0.9)
-            search:GetPropertyChangedSignal("Text"):Connect(applyFilter)
-            relayout()
-        end
-        applyFilter()
-    end
-
-    -- drag (header) - deltas cancel any client inset, so plain offset maths
-    header.InputBegan:Connect(function(input)
+    -- drag by the title bar (deltas cancel any client inset)
+    titlebar.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         local sx, sy = input.Position.X, input.Position.Y
         local px, py = frame.Position.X.Offset, frame.Position.Y.Offset
         HavocUI.startDrag(function(mx, my)
-            local nx, ny = math.floor(px + (mx - sx)), math.floor(py + (my - sy))
-            frame.Position = UDim2.fromOffset(nx, ny)
-            glow.Position = UDim2.fromOffset(nx - 7, ny - 7)
+            frame.Position = UDim2.fromOffset(
+                math.floor(px + (mx - sx)), math.floor(py + (my - sy)))
         end)
     end)
 
-    -- resize grip
-    local grip = create("TextButton", {
-        Size = UDim2.fromOffset(18, 18),
-        Position = UDim2.new(1, -18, 1, -18),
-        BackgroundTransparency = 1,
-        Text = "",
-        AutoButtonColor = false,
-        ZIndex = 5,
-        Parent = frame,
-    })
-    for i = 1, 2 do
-        local bar = create("Frame", {
-            Size = UDim2.fromOffset(7, 2),
-            Position = UDim2.new(1, -2 - i * 5, 1, -2 - i * 5),
-            AnchorPoint = Vector2.new(1, 1),
-            BackgroundColor3 = THEME.TEXT_FAINT,
-            BorderSizePixel = 0,
-            Rotation = -45,
-            ZIndex = 5,
-            Parent = grip,
-        })
-        corner(bar, 1)
+    -- ========================================================
+    -- ROW BUILDERS (used by categories)
+    -- ========================================================
+    local order = 0
+    local function nextOrder()
+        order = order + 1
+        return order
     end
-    grip.InputBegan:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        local sx, sy = input.Position.X, input.Position.Y
-        local sw, sh = frame.Size.X.Offset, frame.Size.Y.Offset
-        HavocUI.startDrag(function(mx, my)
-            local w = math.clamp(math.floor(sw + (mx - sx)), 400, 1100)
-            local h = math.clamp(math.floor(sh + (my - sy)), 320, 1100)
-            frame.Size = UDim2.fromOffset(w, h)
-            glow.Size = UDim2.fromOffset(w + 14, h + 14)
+
+    local function makeRow(parent, height)
+        local row = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, height or 20),
+            BackgroundColor3 = THEME.ROW_HOVER,
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        row.MouseEnter:Connect(function() tween(row, 0.1, { BackgroundTransparency = THEME.ROW_HOVER_T }) end)
+        row.MouseLeave:Connect(function() tween(row, 0.1, { BackgroundTransparency = 1 }) end)
+        return row
+    end
+
+    local function keyChip(parent, entry, opts2)
+        opts2 = opts2 or {}
+        local chip = create("TextButton", {
+            Size = UDim2.fromOffset(38, 16),
+            Position = UDim2.new(1, -4, 0.5, -8),
+            AnchorPoint = Vector2.new(1, 0),
+            BackgroundColor3 = THEME.TRACK,
+            BackgroundTransparency = 0.25,
+            Text = "[" .. ((entry and entry.Key and entry.Key.Name) or "-") .. "]",
+            TextColor3 = THEME.GRAY,
+            TextSize = 10,
+            Font = FONTS.MEDIUM,
+            TextStrokeTransparency = THEME.SHADOW,
+            AutoButtonColor = false,
+            ZIndex = 62,
+            Parent = parent,
+        })
+        box(chip, THEME.BORDER, 0.5)
+        chip.MouseEnter:Connect(function() tween(chip, 0.1, { BackgroundTransparency = 0 }) end)
+        chip.MouseLeave:Connect(function() tween(chip, 0.1, { BackgroundTransparency = 0.25 }) end)
+        chip.MouseButton1Click:Connect(function()
+            if opts2.locked then
+                if opts2.lockNote then toast(opts2.lockNote, { kind = "warn" }) end
+                return
+            end
+            HavocUI.beginRebind(entry, chip)
         end)
-    end)
+        return chip
+    end
 
-    -- popup layer (above everything inside the window)
-    local popupLayer = create("Frame", {
-        Name = "PopupLayer",
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Active = false,
-        ZIndex = (opts.zindex or 40) + 40,
-        Parent = frame,
-    })
+    -- ---- add* factories (shared by every category) ----------
+    local function addToggle(parent, text, getter, setter, hkEntry, opts2)
+        opts2 = opts2 or {}
+        local row = makeRow(parent, 20)
+        local name = label(row, text, 12, THEME.GRAY, {
+            Size = UDim2.new(1, hkEntry and 50 or 14, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local chip = nil
+        if hkEntry then chip = keyChip(row, hkEntry, opts2) end
+        local function refresh()
+            local on = getter() and true or false
+            name.TextColor3 = on and THEME.GREEN or THEME.GRAY
+            if chip and hkEntry then
+                chip.TextColor3 = hkEntry.Enabled and THEME.GRAY or Color3.fromRGB(90, 90, 90)
+            end
+        end
+        row.MouseButton1Click:Connect(function()
+            setter(not (getter() and true or false))
+            refresh()
+            saveTouched()
+        end)
+        refresh()
+        return { row = row, update = refresh }
+    end
 
-    -- entry animation
-    local targetPos = frame.Position
-    local targetGlow = glow.Position
-    frame.Position = targetPos + UDim2.fromOffset(0, 10)
-    glow.Position = targetGlow + UDim2.fromOffset(0, 10)
-    frame.GroupTransparency = 1
-    glow.BackgroundTransparency = 1
-    uiScale.Scale = scale * 0.97
-    tween(frame, 0.22, { GroupTransparency = 0, Position = targetPos })
-    tween(glow, 0.22, { BackgroundTransparency = 0.92, Position = targetGlow })
-    tween(uiScale, 0.22, { Scale = scale })
+    local function addSlider(parent, text, min, max, getter, setter, opts2)
+        opts2 = opts2 or {}
+        local step = opts2.step
+        local decimals = opts2.decimals
+        if decimals == nil then
+            decimals = (step or ((max - min) / 100)) >= 1 and 0 or 1
+        end
+        local suffix = opts2.suffix or ""
+        local row = makeRow(parent, 20)
+        local fill = create("Frame", {
+            Size = UDim2.new(0, 0, 1, 0),
+            BackgroundColor3 = THEME.FILL,
+            BorderSizePixel = 0,
+            ZIndex = 61,
+            Parent = row,
+        })
+        local name = label(row, text, 12, Color3.fromRGB(220, 220, 220), {
+            Size = UDim2.new(0.6, -6, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0.4, -6, 1, 0),
+            Position = UDim2.new(0.6, 0, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local function setFrac(frac, live)
+            frac = math.clamp(frac, 0, 1)
+            local v = min + frac * (max - min)
+            if step then v = math.floor(v / step + 0.5) * step end
+            v = math.clamp(v, min, max)
+            tween(fill, live and 0.03 or 0.1, { Size = UDim2.new(frac, 0, 1, 0) })
+            value.Text = string.format("%." .. tostring(decimals) .. "f", v) .. suffix
+            return v
+        end
+        local function refresh()
+            local v = math.clamp(tonumber(getter()) or min, min, max)
+            setFrac((v - min) / math.max(max - min, 1e-9))
+        end
+        row.MouseEnter:Connect(function()
+            tween(fill, 0.1, { BackgroundColor3 = THEME.FILL_HI })
+        end)
+        row.MouseLeave:Connect(function()
+            tween(fill, 0.1, { BackgroundColor3 = THEME.FILL })
+        end)
+        row.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local function apply(mx)
+                local pos, size = row.AbsolutePosition, row.AbsoluteSize
+                local v = setFrac((mx - pos.X) / math.max(size.X, 1), true)
+                setter(v)
+            end
+            apply(input.Position.X)
+            HavocUI.startDrag(function(mx)
+                apply(mx)
+            end)
+        end)
+        refresh()
+        return { row = row, update = refresh }
+    end
+
+    local function addDropdown(parent, text, items, getter, setter, opts2)
+        opts2 = opts2 or {}
+        local expanded = false
+        local row = makeRow(parent, 20)
+        label(row, text, 12, THEME.GRAY, {
+            Size = UDim2.new(0.55, -6, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0.35, -4, 1, 0),
+            Position = UDim2.new(0.55, 0, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local marker = label(row, "[+]", 12, THEME.TEXT_DIM, {
+            Size = UDim2.fromOffset(22, 20),
+            Position = UDim2.new(1, -22, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local holder = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.55,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        local holderLayout = create("UIListLayout", {
+            Padding = UDim.new(0, 0),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = holder,
+        })
+        local optionRows = {}
+        local update
+        local function rebuildOptions()
+            for _, r in ipairs(optionRows) do r:Destroy() end
+            optionRows = {}
+            local listItems = type(items) == "function" and items() or items
+            local current = tostring(getter())
+            for i, item in ipairs(listItems) do
+                local orow = create("TextButton", {
+                    Size = UDim2.new(1, 0, 0, 18),
+                    BackgroundColor3 = THEME.ROW_HOVER,
+                    BackgroundTransparency = 1,
+                    Text = "",
+                    AutoButtonColor = false,
+                    LayoutOrder = i,
+                    ZIndex = 61,
+                    Parent = holder,
+                })
+                label(orow, tostring(item), 11, tostring(item) == current and THEME.GREEN or THEME.TEXT_DIM, {
+                    Size = UDim2.new(1, -18, 1, 0),
+                    Position = UDim2.fromOffset(14, 0),
+                    ZIndex = 62,
+                    Parent = orow,
+                })
+                orow.MouseEnter:Connect(function() tween(orow, 0.1, { BackgroundTransparency = THEME.ROW_HOVER_T }) end)
+                orow.MouseLeave:Connect(function() tween(orow, 0.1, { BackgroundTransparency = 1 }) end)
+                orow.MouseButton1Click:Connect(function()
+                    setter(item)
+                    update()
+                    expanded = false
+                    holder.Visible = false
+                    marker.Text = "[+]"
+                    saveTouched()
+                end)
+                optionRows[#optionRows + 1] = orow
+            end
+        end
+        update = function()
+            local cur = getter()
+            value.Text = tostring(cur == nil and "-" or cur)
+            if expanded then rebuildOptions() end
+        end
+        row.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            holder.Visible = expanded
+            marker.Text = expanded and "[-]" or "[+]"
+            if expanded then rebuildOptions() end
+        end)
+        update()
+        return { row = row, update = update }
+    end
+
+    local function addMultiSelect(parent, text, items, isOn, setOn, opts2)
+        opts2 = opts2 or {}
+        local expanded = false
+        local row = makeRow(parent, 20)
+        label(row, text, 12, THEME.GRAY, {
+            Size = UDim2.new(0.6, -6, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0.3, -4, 1, 0),
+            Position = UDim2.new(0.6, 0, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local marker = label(row, "[+]", 12, THEME.TEXT_DIM, {
+            Size = UDim2.fromOffset(22, 20),
+            Position = UDim2.new(1, -22, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local holder = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.55,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        create("UIListLayout", {
+            Padding = UDim.new(0, 0),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = holder,
+        })
+        local optionRows = {}
+        local update
+        local function rebuildOptions()
+            for _, r in ipairs(optionRows) do r:Destroy() end
+            optionRows = {}
+            local listItems = type(items) == "function" and items() or items
+            for i, item in ipairs(listItems) do
+                local on = isOn(item) and true or false
+                local orow = create("TextButton", {
+                    Size = UDim2.new(1, 0, 0, 18),
+                    BackgroundColor3 = THEME.ROW_HOVER,
+                    BackgroundTransparency = 1,
+                    Text = "",
+                    AutoButtonColor = false,
+                    LayoutOrder = i,
+                    ZIndex = 61,
+                    Parent = holder,
+                })
+                label(orow, on and "[x]" or "[ ]", 11, on and THEME.GREEN or THEME.TEXT_DIM, {
+                    Size = UDim2.fromOffset(24, 18),
+                    Position = UDim2.fromOffset(10, 0),
+                    ZIndex = 62,
+                    Parent = orow,
+                })
+                label(orow, tostring(item), 11, on and THEME.WHITE or THEME.TEXT_DIM, {
+                    Size = UDim2.new(1, -40, 1, 0),
+                    Position = UDim2.fromOffset(34, 0),
+                    ZIndex = 62,
+                    Parent = orow,
+                })
+                orow.MouseEnter:Connect(function() tween(orow, 0.1, { BackgroundTransparency = THEME.ROW_HOVER_T }) end)
+                orow.MouseLeave:Connect(function() tween(orow, 0.1, { BackgroundTransparency = 1 }) end)
+                orow.MouseButton1Click:Connect(function()
+                    setOn(item, not (isOn(item) and true or false))
+                    rebuildOptions()
+                    update()
+                    saveTouched()
+                end)
+                optionRows[#optionRows + 1] = orow
+            end
+        end
+        update = function()
+            local listItems = type(items) == "function" and items() or items
+            local n = 0
+            for _, it in ipairs(listItems) do
+                if isOn(it) then n = n + 1 end
+            end
+            value.Text = n .. "/" .. #listItems
+            if expanded then rebuildOptions() end
+        end
+        row.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            holder.Visible = expanded
+            marker.Text = expanded and "[-]" or "[+]"
+            if expanded then rebuildOptions() end
+        end)
+        update()
+        return { row = row, update = update }
+    end
+
+    local function addColor(parent, text, getter, setter, opts2)
+        opts2 = opts2 or {}
+        local expanded = false
+        local row = makeRow(parent, 20)
+        local swatch = create("Frame", {
+            Size = UDim2.fromOffset(10, 10),
+            Position = UDim2.new(0, 6, 0.5, -5),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            ZIndex = 62,
+            Parent = row,
+        })
+        box(swatch, Color3.fromRGB(0, 0, 0), 0.3)
+        label(row, text, 12, THEME.GRAY, {
+            Size = UDim2.new(0.6, -26, 1, 0),
+            Position = UDim2.fromOffset(22, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local value = label(row, "", 12, THEME.GOLD, {
+            Size = UDim2.new(0.3, -4, 1, 0),
+            Position = UDim2.new(0.6, 0, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local marker = label(row, "[+]", 12, THEME.TEXT_DIM, {
+            Size = UDim2.fromOffset(22, 20),
+            Position = UDim2.new(1, -22, 0, 0),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 62,
+            Parent = row,
+        })
+        local holder = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.55,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = parent,
+        })
+        create("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+        local channels = { "R", "G", "B" }
+        local comps = { 255, 255, 255 }
+        local channelRows = {}
+        local function applyChannel()
+            local c = Color3.fromRGB(comps[1], comps[2], comps[3])
+            setter(c)
+            swatch.BackgroundColor3 = c
+            value.Text = string.format("#%02X%02X%02X",
+                math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+            saveTouched()
+        end
+        for ci, ch in ipairs(channels) do
+            local crow = create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 16),
+                BackgroundColor3 = THEME.ROW_HOVER,
+                BackgroundTransparency = 1,
+                Text = "",
+                AutoButtonColor = false,
+                LayoutOrder = ci,
+                ZIndex = 61,
+                Parent = holder,
+            })
+            local cfill = create("Frame", {
+                Size = UDim2.new(0, 0, 1, 0),
+                BackgroundColor3 = THEME.FILL,
+                BorderSizePixel = 0,
+                ZIndex = 61,
+                Parent = crow,
+            })
+            label(crow, ch, 10, THEME.TEXT_DIM, {
+                Size = UDim2.fromOffset(20, 16),
+                Position = UDim2.fromOffset(10, 0),
+                ZIndex = 62,
+                Parent = crow,
+            })
+            local cval = label(crow, "255", 10, THEME.GOLD, {
+                Size = UDim2.new(0, 30, 1, 0),
+                Position = UDim2.new(1, -34, 0, 0),
+                TextXAlignment = Enum.TextXAlignment.Right,
+                ZIndex = 62,
+                Parent = crow,
+            })
+            local function setChannel(frac, live)
+                comps[ci] = math.clamp(math.floor(frac * 255 + 0.5), 0, 255)
+                tween(cfill, live and 0.03 or 0.1, { Size = UDim2.new(comps[ci] / 255, 0, 1, 0) })
+                cval.Text = tostring(comps[ci])
+                applyChannel()
+            end
+            crow.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                local function chapply(mx)
+                    local pos, size = crow.AbsolutePosition, crow.AbsoluteSize
+                    setChannel((mx - pos.X) / math.max(size.X, 1), true)
+                end
+                chapply(input.Position.X)
+                HavocUI.startDrag(function(mx)
+                    chapply(mx)
+                end)
+            end)
+            channelRows[#channelRows + 1] = { set = setChannel, fill = cfill, val = cval }
+        end
+        local function update()
+            local c = getter()
+            if typeof(c) ~= "Color3" then c = Color3.new(1, 1, 1) end
+            comps = {
+                math.floor(c.R * 255 + 0.5),
+                math.floor(c.G * 255 + 0.5),
+                math.floor(c.B * 255 + 0.5),
+            }
+            swatch.BackgroundColor3 = c
+            value.Text = string.format("#%02X%02X%02X", comps[1], comps[2], comps[3])
+            for i, ref in ipairs(channelRows) do
+                ref.fill.Size = UDim2.new(comps[i] / 255, 0, 1, 0)
+                ref.val.Text = tostring(comps[i])
+            end
+        end
+        row.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            holder.Visible = expanded
+            marker.Text = expanded and "[-]" or "[+]"
+            if expanded then update() end
+        end)
+        update()
+        return { row = row, update = update }
+    end
+
+    local function addKeybind(parent, entry, opts2)
+        opts2 = opts2 or {}
+        local row = makeRow(parent, 20)
+        label(row, (entry and entry.Desc) or "Keybind", 12, THEME.GRAY, {
+            Size = UDim2.new(1, -50, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            ZIndex = 62,
+            Parent = row,
+        })
+        local chip = keyChip(row, entry, opts2)
+        local function refresh()
+            chip.Text = "[" .. ((entry and entry.Key and entry.Key.Name) or "-") .. "]"
+            chip.TextColor3 = (entry and entry.Enabled ~= false) and THEME.GRAY or Color3.fromRGB(90, 90, 90)
+        end
+        refresh()
+        return { row = row, update = refresh }
+    end
+
+    local function addButton(parent, text, fn, opts2)
+        opts2 = opts2 or {}
+        local danger = opts2.style == "danger"
+        local row = makeRow(parent, 20)
+        local txt = label(row, text, 12, danger and THEME.RED or Color3.fromRGB(210, 210, 210), {
+            Size = UDim2.new(1, 0, 1, 0),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 62,
+            Parent = row,
+        })
+        row.BackgroundColor3 = THEME.BTN
+        row.BackgroundTransparency = THEME.BTN_T
+        row.MouseEnter:Connect(function()
+            txt.TextColor3 = danger and THEME.RED or THEME.GREEN
+        end)
+        row.MouseLeave:Connect(function()
+            txt.TextColor3 = danger and THEME.RED or Color3.fromRGB(210, 210, 210)
+        end)
+        row.MouseButton1Click:Connect(function()
+            if fn then pcall(fn) end
+        end)
+        return { row = row, update = function() end }
+    end
+
+    local function addLabel(parent, text)
+        local l = label(parent, text, 10, Color3.fromRGB(140, 140, 140), {
+            Size = UDim2.new(1, -8, 0, 14),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Position = UDim2.fromOffset(6, 0),
+            TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            LayoutOrder = nextOrder(),
+            ZIndex = 62,
+            Parent = parent,
+        })
+        return l
+    end
+
+    -- ========================================================
+    -- CATEGORIES
+    -- ========================================================
+    local categories = {}
+    function W.category(name, opts2)
+        opts2 = opts2 or {}
+        local header = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 22),
+            BackgroundColor3 = THEME.HEADER_BG,
+            BackgroundTransparency = THEME.HEADER_T,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = list,
+        })
+        local headerText = label(header, (opts2.collapsed and "[+] " or "[-] ") .. name, 13, THEME.WHITE, {
+            Size = UDim2.new(1, -10, 1, 0),
+            Position = UDim2.fromOffset(6, 0),
+            Font = FONTS.BOLD,
+            ZIndex = 62,
+            Parent = header,
+        })
+        local items = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Visible = not opts2.collapsed,
+            LayoutOrder = nextOrder(),
+            ZIndex = 61,
+            Parent = list,
+        })
+        create("UIListLayout", {
+            Padding = UDim.new(0, 0),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = items,
+        })
+        create("UIPadding", {
+            PaddingLeft = UDim.new(0, 2),
+            PaddingRight = UDim.new(0, 2),
+            Parent = items,
+        })
+        header.MouseEnter:Connect(function() tween(header, 0.1, { BackgroundTransparency = 0.1 }) end)
+        header.MouseLeave:Connect(function() tween(header, 0.1, { BackgroundTransparency = THEME.HEADER_T }) end)
+        local expanded = not opts2.collapsed
+        header.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            items.Visible = expanded
+            headerText.Text = (expanded and "[-] " or "[+] ") .. name
+        end)
+        local cat = {}
+        cat.header = header
+        cat.items = items
+        cat.setExpanded = function(v)
+            expanded = v and true or false
+            items.Visible = expanded
+            headerText.Text = (expanded and "[-] " or "[+] ") .. name
+        end
+        cat.addToggle      = function(_, t, g, s, hk, o) return addToggle(items, t, g, s, hk, o) end
+        cat.addSlider      = function(_, t, mn, mx, g, s, o) return addSlider(items, t, mn, mx, g, s, o) end
+        cat.addDropdown    = function(_, t, it, g, s, o) return addDropdown(items, t, it, g, s, o) end
+        cat.addMultiSelect = function(_, t, it, g, s, o) return addMultiSelect(items, t, it, g, s, o) end
+        cat.addColor       = function(_, t, g, s, o) return addColor(items, t, g, s, o) end
+        cat.addKeybind     = function(_, e, o) return addKeybind(items, e, o) end
+        cat.addButton      = function(_, t, f, o) return addButton(items, t, f, o) end
+        cat.addLabel       = function(_, t) return addLabel(items, t) end
+        categories[#categories + 1] = cat
+        updateHeight()
+        return cat
+    end
+
+    updateHeight()
 
     -- handle
     W.frame = frame
-    W.header = header
-    W.popupLayer = popupLayer
-    W.tab = function(i) return pages[i] end
+    W.titlebar = titlebar
     W.setScale = function(s)
         uiScale.Scale = math.clamp(tonumber(s) or 1, 0.6, 1.6)
     end
-    W.show = function()
-        frame.Visible = true
-        glow.Visible = true
-    end
-    W.hide = function()
-        frame.Visible = false
-        glow.Visible = false
-    end
+    W.show = function() frame.Visible = true end
+    W.hide = function() frame.Visible = false end
     W.toggle = function()
         if frame.Visible then W.hide() else W.show() end
     end
     W.isVisible = function() return frame.Visible end
     W.destroy = function()
-        pcall(function() glow:Destroy() end)
         pcall(function() frame:Destroy() end)
     end
     return W
