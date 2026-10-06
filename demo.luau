@@ -20,10 +20,26 @@ local ok = pcall(function() screenGui.Parent = gethui() end)
 if not ok then pcall(function() screenGui.Parent = game:GetService("CoreGui") end) end
 
 local toaster = UI.makeToaster(screenGui)
+
+-- the active config slot: autoloads on start, autosaves on every change
+local cfg -- forward declaration (the debounced autosave below needs it)
+local saveQueued = false
+local function scheduleActiveAutosave()
+    if not cfg or saveQueued then return end
+    if not cfg:active() then return end
+    saveQueued = true
+    task.delay(1, function()
+        saveQueued = false
+        if cfg and cfg:active() then
+            pcall(function() cfg:saveActive() end)
+        end
+    end)
+end
+
 UI.init{
     notify = toaster,
     save = function() end,
-    saveDebounced = function() end,
+    saveDebounced = scheduleActiveAutosave,
 }
 
 local function defaultState()
@@ -80,7 +96,7 @@ local gui = UI.makeClickGui{
     startY = 100,
 }
 
-local cfg = UI.makeConfig{ name = "demo", folder = "havoc-ui/configs" }
+cfg = UI.makeConfig{ name = "demo", folder = "havoc-ui/configs" }
 
 local hud = UI.makeHud(screenGui)
 for name, key in pairs({
@@ -177,6 +193,7 @@ misc:addButton("Reset States", function()
     for k in pairs(state) do state[k] = nil end
     for k, v in pairs(d) do state[k] = v end
     pcall(delfile, cfg.path("__autosave"))
+    cfg:clearActive()
     UI.resetTheme()
     UI.refreshAll()
     toaster("states + theme reset", { kind = "warn" })
@@ -313,6 +330,19 @@ cfgTab:addButton("Delete Selected", function()
     end
     cfg:delete(state.configSel)
 end, { style = "danger", confirm = true })
+cfgTab:addIndicator("Auto Config", function()
+    return cfg:active() or "none"
+end)
+cfgTab:addButton("Set Active", function()
+    if state.configSel == "" then
+        toaster("pick a config from the list first", { kind = "warn" })
+        return
+    end
+    cfg:setActive(state.configSel)
+end)
+cfgTab:addButton("Clear Active", function()
+    cfg:clearActive()
+end)
 
 -- every module + keybind + the theme is part of a config
 do
@@ -351,8 +381,11 @@ UI.addRefresh(function()
     end
 end)
 
--- reload-in-place: bring back modules + keybinds + theme from the autosave
-if cfg:exists("__autosave") then
+-- reload-in-place: the active config wins, legacy autosave as fallback
+local startSlot = cfg:active()
+if startSlot and cfg:exists(startSlot) then
+    cfg:load(startSlot)
+elseif cfg:exists("__autosave") then
     cfg:load("__autosave")
 end
 -- ...and put the panels back where the user left them
@@ -394,7 +427,13 @@ genv.__HAVOC_UI_DEMO = {
             end
             genv.__HAVOC_DEMO_POS = pos
         end)
-        pcall(function() cfg:save("__autosave") end)
+        pcall(function()
+            if cfg:active() then
+                cfg:saveActive()
+            else
+                cfg:save("__autosave")
+            end
+        end)
         pcall(function() hud:destroy() end)
         pcall(function() inputHandle.disconnect() end)
         for _, c in ipairs(conns) do

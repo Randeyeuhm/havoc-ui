@@ -3,15 +3,16 @@
 Minecraft-style cheat GUI toolkit for the Havoc hubs (Oaklands / PD / Deadline).
 Single-file drop-in: one `loadstring` + a parent `ScreenGui`.
 
-**Status: v0.9-hud — sandbox iteration.** Design language: flat square
+**Status: v0.10-active — sandbox iteration.** Design language: flat square
 blocks, **detached per-category panels** (collapsed `[+] Combat` headers
 spawn their own lists; drag each panel anywhere), plus a **main HAVOC HUB
 panel** with a live module **search box** and an `[x]` visibility switch
 for every category list, **right-click module settings drawers**, a **full
 keybind system** (mouse buttons, Ctrl/Shift/Alt combos, hold/toggle modes,
 ESC-unbinds), a **Config tab** (live theme editing + presets + per-slot
-save/load configs) and a **HUD** (watermark with FPS + arraylist + keybind
-list). Tight rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]`
+save/load configs + a pinnable **active config** that autoloads and
+autosaves) and a **HUD** (watermark with FPS + arraylist + keybind list).
+Tight rows, ON = #55FF55 green / OFF = #AAAAAA gray, inline `[x]`
 checkboxes and vanilla-style sliders, chat-palette accents (gold #FFFF55,
 red #FF5555, aqua #55FFFF).
 
@@ -137,7 +138,30 @@ cfg:save("legit")              -- -> havoc-ui/configs/legit.lua
 cfg:load("legit")              -- applies modules + keybinds + theme,
                                -- then UI.refreshAll() repaints every widget
 cfg:list()      --> { "legit", "rage", ... }
-cfg:exists("legit"), cfg:delete("legit"), cfg.path("legit")
+cfg:exists("legit"), cfg:delete("legit"), cfg:path("legit")
+
+-- the "active" config: autoload target + autosave target
+cfg:setActive("legit")   -- pointer persisted in configs/__active.txt
+cfg:active()             --> "legit" | nil
+cfg:loadActive()         -- used at startup
+cfg:saveActive()         -- quiet (no toast) save into the active slot
+cfg:clearActive()
+```
+
+A typical host wires autosave through the existing save hook:
+
+```lua
+UI.init{
+  saveDebounced = function()      -- called on every widget change
+    if cfg:active() then            -- but only when an active config is set
+      task.delay(1, function() cfg:saveActive() end) -- coalesced
+    end
+  end,
+}
+```
+
+and on teardown prefers the active slot, falling back to a legacy autosave
+file: `if cfg:active() then cfg:saveActive() else cfg:save("__autosave") end`.
 ```
 
 Configs serialize booleans, numbers, strings, `Color3`, `EnumItem`s and

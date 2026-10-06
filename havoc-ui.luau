@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.9.3-keys"
+HavocUI.VERSION = "v0.10-active"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -2494,7 +2494,63 @@ function HavocUI.makeConfig(opts)
     end
     C.path = function(_, slot) return (filePath(slot)) end
 
-    function C.save(_, slot)
+    -- the "active" slot: what the host autoloads on start & autosaves on change
+    local activeFile = folder .. "/__active.txt"
+    local function activeSlot()
+        local ok, txt = pcall(readfile, activeFile)
+        if ok and type(txt) == "string" then
+            txt = txt:gsub("%s+", "")
+            if txt ~= "" then return txt end
+        end
+        return nil
+    end
+
+    function C.active(_)
+        return activeSlot()
+    end
+
+    function C.setActive(_, slot)
+        local path, safe = filePath(slot)
+        local okRead = pcall(readfile, path)
+        if not okRead then
+            cfgNotify("config '" .. safe .. "' not found - save it first", "warn")
+            return false
+        end
+        pcall(makefolder, folder)
+        local ok, err = pcall(writefile, activeFile, safe)
+        if not ok then
+            cfgNotify("could not set active config: " .. tostring(err), "err")
+            return false
+        end
+        cfgNotify("autoload + autosave config: '" .. safe .. "'", "ok")
+        return true
+    end
+
+    function C.clearActive(_)
+        pcall(delfile, activeFile)
+        cfgNotify("autoload + autosave cleared", "warn")
+        return true
+    end
+
+    function C.saveActive(_)
+        local a = activeSlot()
+        if not a then
+            cfgNotify("no active config set", "warn")
+            return false
+        end
+        return C.save(nil, a, true)
+    end
+
+    function C.loadActive(_)
+        local a = activeSlot()
+        if not a then
+            cfgNotify("no active config set", "warn")
+            return false
+        end
+        return C.load(nil, a)
+    end
+
+    function C.save(_, slot, quiet)
         local path, safe = filePath(slot)
         local data = { modules = {}, keybinds = {}, theme = {} }
         for id, t in pairs(tracks) do
@@ -2520,7 +2576,9 @@ function HavocUI.makeConfig(opts)
             cfgNotify("config save failed: " .. tostring(err), "err")
             return false
         end
-        cfgNotify("saved config '" .. safe .. "'", "ok")
+        if not quiet then
+            cfgNotify("saved config '" .. safe .. "'", "ok")
+        end
         return true
     end
 
