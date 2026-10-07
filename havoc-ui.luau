@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.10-active"
+HavocUI.VERSION = "v0.10.1-title"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -527,6 +527,10 @@ function HavocUI.makeHud(parent, opts)
             watermark = opts.watermark ~= false,
             array = opts.array ~= false,
             keys = opts.keys == true,
+            -- watermark text; games overrided it via makeHud{title=...} or
+            -- hud:setTitle("HAVOC HUB | MY GAME")
+            title = (type(opts.title) == "string" and opts.title ~= "")
+                and opts.title or ("HAVOC HUB " .. tostring(HavocUI.VERSION)),
         },
     }
 
@@ -685,7 +689,7 @@ function HavocUI.makeHud(parent, opts)
             return
         end
         if not wm.Visible then wm.Visible = true end
-        local txt = "HAVOC HUB " .. tostring(HavocUI.VERSION) .. "  |  " .. tostring(math.floor(fpsSmooth + 0.5)) .. " FPS"
+        local txt = tostring(hud.flags.title) .. "  |  " .. tostring(math.floor(fpsSmooth + 0.5)) .. " FPS"
         if txt ~= lastWm then
             wmLabel.Text = txt
             lastWm = txt
@@ -700,6 +704,11 @@ function HavocUI.makeHud(parent, opts)
     end
     function hud:setWatermark(on)
         self.flags.watermark = on and true or false
+        return self
+    end
+    function hud:setTitle(t)
+        self.flags.title = (type(t) == "string" and t ~= "")
+            and t or ("HAVOC HUB " .. tostring(HavocUI.VERSION))
         return self
     end
     function hud:setArrayList(on)
