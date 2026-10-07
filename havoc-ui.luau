@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.10.1-title"
+HavocUI.VERSION = "v0.11-notes"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -803,6 +803,88 @@ function HavocUI.makeClickGui(opts)
         return row
     end
 
+    -- ---- hover notes (tooltips) ------------------------------------
+    -- opts.note on ANY widget shows a floating note while its row is
+    -- hovered: explanations appear on demand instead of sitting in the
+    -- list as label rows. Attach to custom rows with W.addNote(row, text)
+    -- (also available on every builder as b:addNote(row, text)).
+    local noteFrame, noteLabel, noteRow
+    local function ensureNoteFrame()
+        if noteFrame then return end
+        noteFrame = create("Frame", {
+            Name = "HavocNote",
+            Size = UDim2.fromOffset(160, 18),
+            AutomaticSize = Enum.AutomaticSize.XY,
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.08,
+            BorderSizePixel = 0,
+            Visible = false,
+            ZIndex = 400,
+            Parent = parent,
+        })
+        box(noteFrame, THEME.BORDER, 0.15)
+        create("UIPadding", {
+            PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
+            PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+            Parent = noteFrame,
+        })
+        noteLabel = label(noteFrame, "", 11, THEME.TEXT_DIM, {
+            Size = UDim2.fromOffset(160, 14),
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = 401,
+            Parent = noteFrame,
+        })
+    end
+    local function noteSize(text)
+        local ok, sz = pcall(function()
+            return textSvc:GetTextSize(text, 11, FONTS.MEDIUM, Vector2.new(230, 999))
+        end)
+        if ok and sz then
+            return math.min(math.ceil(sz.X) + 2, 230), math.max(math.ceil(sz.Y), 14)
+        end
+        return 180, 16
+    end
+    local function showNote(text, row)
+        ensureNoteFrame()
+        noteRow = row
+        local w, h = noteSize(text)
+        noteLabel.Text = text
+        noteLabel.Size = UDim2.fromOffset(w, h)
+        noteFrame.Visible = true
+    end
+    local function hideNote(row)
+        if row ~= nil and noteRow ~= row then return end
+        noteRow = nil
+        if noteFrame then noteFrame.Visible = false end
+    end
+    local function attachNote(row, text)
+        if type(text) ~= "string" or text == "" or not row then return row end
+        row.MouseEnter:Connect(function() showNote(text, row) end)
+        row.MouseLeave:Connect(function() hideNote(row) end)
+        return row
+    end
+    registerTick(function()
+        if not (noteFrame and noteFrame.Visible) then return end
+        if noteRow and not noteRow.Parent then
+            hideNote()
+            return
+        end
+        local mouse = game:GetService("UserInputService"):GetMouseLocation()
+        local vpX, vpY = 1920, 1080
+        local okC, cam = pcall(function() return workspace.CurrentCamera end)
+        if okC and cam and cam.ViewportSize then
+            vpX, vpY = cam.ViewportSize.X, cam.ViewportSize.Y
+        end
+        local size = noteFrame.AbsoluteSize
+        local x = mouse.X + 14
+        local y = mouse.Y + 16
+        if x + size.X + 6 > vpX then x = mouse.X - size.X - 12 end
+        if y + size.Y + 6 > vpY then y = mouse.Y - size.Y - 10 end
+        noteFrame.Position = UDim2.fromOffset(math.max(x, 4), math.max(y, 4))
+    end)
+
     local function keyChip(parent, entry, opts2)
         opts2 = opts2 or {}
         local chipText = keyLabel(entry)
@@ -866,6 +948,7 @@ function HavocUI.makeClickGui(opts)
     local function addToggle(parent, text, getter, setter, hkEntry, opts2)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         local name = label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(1, -14, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -911,6 +994,7 @@ function HavocUI.makeClickGui(opts)
         end
         local suffix = opts2.suffix or ""
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         local fill = create("Frame", {
             Size = UDim2.new(0, 0, 1, 0),
             BackgroundColor3 = THEME.FILL,
@@ -1030,6 +1114,7 @@ function HavocUI.makeClickGui(opts)
         opts2 = opts2 or {}
         local expanded = false
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.55, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -1122,6 +1207,7 @@ function HavocUI.makeClickGui(opts)
         opts2 = opts2 or {}
         local expanded = false
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.6, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -1222,6 +1308,7 @@ function HavocUI.makeClickGui(opts)
         opts2 = opts2 or {}
         local expanded = false
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         local swatch = create("Frame", {
             Size = UDim2.fromOffset(10, 10),
             Position = UDim2.new(0, 6, 0.5, -5),
@@ -1507,6 +1594,7 @@ function HavocUI.makeClickGui(opts)
     local function addKeybind(parent, entry, opts2)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         label(row, (entry and entry.Desc) or "Keybind", 12, THEME.GRAY, {
             Size = UDim2.new(1, -50, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -1527,6 +1615,7 @@ function HavocUI.makeClickGui(opts)
         opts2 = opts2 or {}
         local danger = opts2.style == "danger"
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         local txt = label(row, text, 12, danger and THEME.RED or Color3.fromRGB(210, 210, 210), {
             Size = UDim2.new(1, 0, 1, 0),
             TextXAlignment = Enum.TextXAlignment.Center,
@@ -1649,6 +1738,7 @@ function HavocUI.makeClickGui(opts)
             return string.format("%d%%", math.floor(frac * 100 + 0.5))
         end
         local row = makeRow(parent, 24)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(0.6, -6, 0, 14),
             Position = UDim2.fromOffset(6, 2),
@@ -1697,6 +1787,7 @@ function HavocUI.makeClickGui(opts)
     local function addIndicator(parent, text, getter, opts2)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.5, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -1736,6 +1827,7 @@ function HavocUI.makeClickGui(opts)
     local function addTextInput(parent, text, getter, setter, opts2)
         opts2 = opts2 or {}
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, THEME.GRAY, {
             Size = UDim2.new(0.4, -6, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -1786,6 +1878,7 @@ function HavocUI.makeClickGui(opts)
         local decimals = opts2.decimals
         if decimals == nil then decimals = step >= 1 and 0 or 1 end
         local row = makeRow(parent, 20)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(1, -112, 1, 0),
             Position = UDim2.fromOffset(6, 0),
@@ -1845,6 +1938,7 @@ function HavocUI.makeClickGui(opts)
         local decimals = opts2.decimals
         if decimals == nil then decimals = step >= 1 and 0 or 1 end
         local row = makeRow(parent, 24)
+        attachNote(row, opts2 and opts2.note)
         label(row, text, 12, Color3.fromRGB(220, 220, 220), {
             Size = UDim2.new(0.5, -6, 0, 14),
             Position = UDim2.fromOffset(6, 0),
@@ -1989,6 +2083,9 @@ function HavocUI.makeClickGui(opts)
         end
         b.addSection = function(_, t)
             return reg("", addSection(target, t))
+        end
+        b.addNote = function(_, row, text)
+            return attachNote(row, text)
         end
         b.addProgress = function(_, t, g, o)
             return reg(t, addProgress(target, t, g, o))
@@ -2400,6 +2497,8 @@ function HavocUI.makeClickGui(opts)
         end
     end
     W.getScale = function() return curScale end
+    -- attach a hover note to any row frame (see the hover-notes section)
+    W.addNote = attachNote
     -- re-seat every panel on its slot (use after setScale so nothing overlaps)
     W.relayout = function()
         for i, p in ipairs(W.panels) do
