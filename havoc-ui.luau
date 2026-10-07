@@ -2318,8 +2318,10 @@ function HavocUI.makeClickGui(opts)
             -- AbsoluteContentSize is post-UIScale, but panel/list offsets are not
             local contentH = itemsLayout.AbsoluteContentSize.Y / scale + V_PAD
             if adoptedPage then
-                -- window mode: the item list fills its tab page
-                items.Size = UDim2.new(1, 0, 1, 0)
+                -- window mode: the item list fills its tab page, below the
+                -- page header (title + hairline drawn by the page chrome)
+                items.Size = UDim2.new(1, -8, 1, -32)
+                items.Position = UDim2.fromOffset(4, 28)
                 items.CanvasSize = UDim2.new(0, 0, 0, contentH)
                 return
             end
@@ -2549,6 +2551,28 @@ function HavocUI.makeClickGui(opts)
         windowScale.Scale = curScale
         windowScale.Parent = windowFrame
 
+        -- rail backdrop column + the hairline separating rail from content
+        create("Frame", {
+            Name = "RailBg",
+            Size = UDim2.new(0, 116, 1, -24),
+            Position = UDim2.fromOffset(0, 24),
+            BackgroundColor3 = THEME.TITLEBAR,
+            BackgroundTransparency = 0.3,
+            BorderSizePixel = 0,
+            ZIndex = 70,
+            Parent = windowFrame,
+        })
+        create("Frame", {
+            Name = "RailSep",
+            Size = UDim2.new(0, 1, 1, -24),
+            Position = UDim2.fromOffset(116, 24),
+            BackgroundColor3 = THEME.BORDER,
+            BackgroundTransparency = 0.35,
+            BorderSizePixel = 0,
+            ZIndex = 72,
+            Parent = windowFrame,
+        })
+
         windowHeader = create("TextButton", {
             Size = UDim2.new(1, 0, 0, 24),
             BackgroundColor3 = THEME.HEADER_BG,
@@ -2565,6 +2589,17 @@ function HavocUI.makeClickGui(opts)
             ZIndex = 72,
             Parent = windowHeader,
         })
+        -- hairline under the title bar
+        create("Frame", {
+            Name = "HeaderLine",
+            Size = UDim2.new(1, 0, 0, 1),
+            Position = UDim2.fromOffset(0, 23),
+            BackgroundColor3 = THEME.BORDER,
+            BackgroundTransparency = 0.5,
+            BorderSizePixel = 0,
+            ZIndex = 72,
+            Parent = windowFrame,
+        })
         local closeBtn = create("TextButton", {
             Size = UDim2.fromOffset(22, 24),
             Position = UDim2.new(1, -22, 0, 0),
@@ -2574,13 +2609,14 @@ function HavocUI.makeClickGui(opts)
             ZIndex = 72,
             Parent = windowHeader,
         })
-        label(closeBtn, "[x]", 12, THEME.TEXT_DIM, {
+        local closeLbl = label(closeBtn, "[x]", 12, THEME.TEXT_DIM, {
             Size = UDim2.fromScale(1, 1),
             TextXAlignment = Enum.TextXAlignment.Center,
             ZIndex = 73,
             Parent = closeBtn,
         })
-        closeBtn.MouseEnter:Connect(function() end)
+        closeBtn.MouseEnter:Connect(function() closeLbl.TextColor3 = THEME.RED end)
+        closeBtn.MouseLeave:Connect(function() closeLbl.TextColor3 = THEME.TEXT_DIM end)
         closeBtn.MouseButton1Click:Connect(function()
             setWindowVisible(false)
         end)
@@ -2618,6 +2654,24 @@ function HavocUI.makeClickGui(opts)
             PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
             Parent = windowRail,
         })
+        -- gap + hairline under the search slot (buttons start at LayoutOrder 10)
+        create("Frame", {
+            Size = UDim2.new(1, 0, 0, 4),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            LayoutOrder = 1,
+            ZIndex = 71,
+            Parent = windowRail,
+        })
+        create("Frame", {
+            Size = UDim2.new(1, 0, 0, 1),
+            BackgroundColor3 = THEME.BORDER,
+            BackgroundTransparency = 0.5,
+            BorderSizePixel = 0,
+            LayoutOrder = 2,
+            ZIndex = 71,
+            Parent = windowRail,
+        })
         windowContent = create("Frame", {
             Size = UDim2.new(1, -117, 1, -26),
             Position = UDim2.fromOffset(117, 25),
@@ -2637,7 +2691,8 @@ function HavocUI.makeClickGui(opts)
         for r, rb in pairs(railButtons) do
             local active = (r == ref)
             rb.text.TextColor3 = active and THEME.AQUA or THEME.TEXT_DIM
-            rb.btn.BackgroundTransparency = active and 0.4 or 1
+            rb.btn.BackgroundTransparency = active and 0.35 or 1
+            if rb.accent then rb.accent.Visible = active end
         end
     end
     selectCategoryFn = selectCategory
@@ -2658,20 +2713,29 @@ function HavocUI.makeClickGui(opts)
                 ZIndex = 71,
                 Parent = windowContent,
             })
-            create("UIListLayout", {
-                Padding = UDim.new(0, 1),
-                SortOrder = Enum.SortOrder.LayoutOrder,
+            -- page header: category name + hairline (the item list sits below)
+            label(page, name, 12, THEME.WHITE, {
+                Name = "PageTitle",
+                Size = UDim2.new(1, -12, 0, 14),
+                Position = UDim2.fromOffset(6, 6),
+                Font = FONTS.MEDIUM,
+                ZIndex = 71,
                 Parent = page,
             })
-            create("UIPadding", {
-                PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2),
-                PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2),
+            create("Frame", {
+                Name = "PageLine",
+                Size = UDim2.new(1, -10, 0, 1),
+                Position = UDim2.fromOffset(5, 24),
+                BackgroundColor3 = THEME.BORDER,
+                BackgroundTransparency = 0.4,
+                BorderSizePixel = 0,
+                ZIndex = 71,
                 Parent = page,
             })
             catPages[ref] = page
             railOrder = railOrder + 1
             local btn = create("TextButton", {
-                Size = UDim2.new(1, 0, 0, 20),
+                Size = UDim2.new(1, 0, 0, 22),
                 BackgroundColor3 = THEME.ROW_HOVER,
                 BackgroundTransparency = 1,
                 Text = "",
@@ -2682,9 +2746,20 @@ function HavocUI.makeClickGui(opts)
             })
             local txt = label(btn, name, 12, THEME.TEXT_DIM, {
                 Size = UDim2.new(1, -12, 1, 0),
-                Position = UDim2.fromOffset(6, 0),
+                Position = UDim2.fromOffset(8, 0),
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 ZIndex = 73,
+                Parent = btn,
+            })
+            -- active-tab accent bar (left edge)
+            local accent = create("Frame", {
+                Size = UDim2.fromOffset(2, 22),
+                Position = UDim2.fromOffset(0, 0),
+                BackgroundColor3 = THEME.AQUA,
+                BackgroundTransparency = 0.15,
+                BorderSizePixel = 0,
+                Visible = false,
+                ZIndex = 74,
                 Parent = btn,
             })
             btn.MouseEnter:Connect(function()
@@ -2700,11 +2775,12 @@ function HavocUI.makeClickGui(opts)
             btn.MouseButton1Click:Connect(function()
                 selectCategory(ref)
             end)
-            railButtons[ref] = { btn = btn, text = txt }
+            railButtons[ref] = { btn = btn, text = txt, accent = accent }
+        else
+            local title = page:FindFirstChild("PageTitle")
+            if title then title.Text = name end
         end
         ref.items.Parent = page
-        ref.items.Size = UDim2.new(1, 0, 1, 0)
-        ref.items.Position = UDim2.fromOffset(0, 0)
         ref.items.ZIndex = 71
         if ref.setPage then ref.setPage(page) end
         ref.panel.Visible = false
