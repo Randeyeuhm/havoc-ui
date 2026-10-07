@@ -46,7 +46,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local HavocUI = {}
-HavocUI.VERSION = "v0.11-notes"
+HavocUI.VERSION = "v0.12-modes"
 
 -- ============================================================
 -- THEME / FONTS  (Minecraft chat palette)
@@ -743,6 +743,11 @@ function HavocUI.makeClickGui(opts)
     local parent = opts.parent
     local index = 0
     local panelRefs = {}
+    -- UI mode: "panels" (minimal detached lists, default) or "window"
+    -- (one full window with a tab rail). Assigned in the window-mode
+    -- section; forward-declared so search can read it.
+    local mode = "panels"
+    local windowTitleText = "HAVOC HUB"
     registerThemeRoot(parent)
 
     -- UI scale (same rule as the hub menus: auto up to 1.2x on big displays)
@@ -2031,6 +2036,7 @@ function HavocUI.makeClickGui(opts)
 
     -- ---- search registry --------------------------------------
     local searchCats = {}
+    local selectCategoryFn -- forward decl (window mode's tab selector)
     local function registerEntry(cat, entryName, rowObj, group)
         local e = { row = rowObj, name = string.lower(tostring(entryName or "")), group = group }
         cat.entries[#cat.entries + 1] = e
@@ -2306,10 +2312,17 @@ function HavocUI.makeClickGui(opts)
         })
 
         local expanded = not opts2.collapsed
+        local adoptedPage = nil   -- set when mode == "window" (items reparented)
         local V_PAD = 4 -- 2px breathing room top+bottom around the hover highlights
         local function updatePanel()
             -- AbsoluteContentSize is post-UIScale, but panel/list offsets are not
             local contentH = itemsLayout.AbsoluteContentSize.Y / scale + V_PAD
+            if adoptedPage then
+                -- window mode: the item list fills its tab page
+                items.Size = UDim2.new(1, 0, 1, 0)
+                items.CanvasSize = UDim2.new(0, 0, 0, contentH)
+                return
+            end
             local visH = expanded and math.min(contentH, maxList) or 0
             panel.Size = UDim2.fromOffset(width, 22 + visH)
             items.Size = UDim2.new(1, 0, 0, visH)
@@ -2354,6 +2367,13 @@ function HavocUI.makeClickGui(opts)
             panel = panel, header = header, items = items,
             setExpanded = setExpanded,
             isExpanded = function() return expanded end,
+            -- window-mode support: reparent the item list into a tab page
+            -- (page nil = back inside the floating panel)
+            setPage = function(page)
+                adoptedPage = page
+                updatePanel()
+            end,
+            update = updatePanel,
         }
     end
 
@@ -2364,6 +2384,7 @@ function HavocUI.makeClickGui(opts)
     local function applySearch(raw)
         local q = string.lower(raw or "")
         local searching = q ~= ""
+        local firstMatch = nil
         for _, cat in ipairs(searchCats) do
             if searching then
                 if not cat.snap then
@@ -2394,6 +2415,7 @@ function HavocUI.makeClickGui(opts)
                     if show then matches = matches + 1 end
                 end
                 if matches > 0 then cat.panelRef.setExpanded(true) end
+                if matches > 0 and not firstMatch then firstMatch = cat end
             else
                 for _, e in ipairs(cat.entries) do
                     e.row.Visible = true
@@ -2411,6 +2433,10 @@ function HavocUI.makeClickGui(opts)
                     cat.snap = nil
                 end
             end
+        end
+        -- window mode: jump to the first tab with matches
+        if searching and mode == "window" and firstMatch and selectCategoryFn then
+            selectCategoryFn(firstMatch.panelRef)
         end
     end
 
@@ -2473,6 +2499,267 @@ function HavocUI.makeClickGui(opts)
         end)
     end
 
+    -- ========================================================
+    -- UI MODES: "panels" vs "window"
+    -- ========================================================
+    -- panels = the minimal detached lists (default, the universal look).
+    -- window = one full window: title bar, left tab rail (one tab per
+    -- category), search at the top of the rail, content on the right.
+    -- The category item lists keep every row; switching reparents them
+    -- between the floating panel chrome and a tab page, so both modes
+    -- stay live on the SAME registry (search, notes, refresh all work).
+    mode = (opts.mode == "window") and "window" or "panels"
+    local catPages = {}     -- ref -> page ScrollingFrame
+    local railButtons = {}  -- ref -> { btn, text }
+    local railOrder = 10
+    local selectedRef = nil
+    local windowFrame, windowScale, windowHeader, windowTitle, windowRail, windowContent
+
+    local function setWindowVisible(v)
+        if windowFrame then windowFrame.Visible = v and true or false end
+    end
+
+    -- park the shared search box in the rail (window mode). Idempotent and
+    -- called on every entry into window mode - the box must move back even
+    -- when the window frame already exists from a previous switch.
+    local function placeSearchInWindow()
+        if searchBox then
+            searchBox.Parent = windowRail
+            searchBox.LayoutOrder = 0
+            searchBox.Size = UDim2.new(1, 0, 0, 20)
+        end
+    end
+
+    local function ensureWindow()
+        if windowFrame then return end
+        local px, py = slotPosition(0)
+        windowFrame = create("Frame", {
+            Name = "HavocWindow",
+            Size = UDim2.fromOffset(math.max(width, 330), 460),
+            Position = UDim2.fromOffset(px, py),
+            BackgroundColor3 = THEME.BG,
+            BackgroundTransparency = THEME.BG_T,
+            BorderSizePixel = 0,
+            Visible = false,
+            ZIndex = 70,
+            Parent = parent,
+        })
+        box(windowFrame, THEME.BORDER, 0)
+        windowScale = Instance.new("UIScale")
+        windowScale.Scale = curScale
+        windowScale.Parent = windowFrame
+
+        windowHeader = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 24),
+            BackgroundColor3 = THEME.HEADER_BG,
+            BackgroundTransparency = THEME.HEADER_T,
+            Text = "",
+            AutoButtonColor = false,
+            ZIndex = 71,
+            Parent = windowFrame,
+        })
+        windowTitle = label(windowHeader, windowTitleText, 13, THEME.WHITE, {
+            Size = UDim2.new(1, -30, 1, 0),
+            Position = UDim2.fromOffset(8, 0),
+            Font = FONTS.BOLD,
+            ZIndex = 72,
+            Parent = windowHeader,
+        })
+        local closeBtn = create("TextButton", {
+            Size = UDim2.fromOffset(22, 24),
+            Position = UDim2.new(1, -22, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            ZIndex = 72,
+            Parent = windowHeader,
+        })
+        label(closeBtn, "[x]", 12, THEME.TEXT_DIM, {
+            Size = UDim2.fromScale(1, 1),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            ZIndex = 73,
+            Parent = closeBtn,
+        })
+        closeBtn.MouseEnter:Connect(function() end)
+        closeBtn.MouseButton1Click:Connect(function()
+            setWindowVisible(false)
+        end)
+        -- drag by the header
+        windowHeader.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local sx, sy = input.Position.X, input.Position.Y
+            local ox, oy = windowFrame.Position.X.Offset, windowFrame.Position.Y.Offset
+            HavocUI.startDrag(function(mx, my)
+                windowFrame.Position = UDim2.fromOffset(
+                    math.floor(ox + (mx - sx)), math.floor(oy + (my - sy)))
+            end)
+        end)
+
+        windowRail = create("ScrollingFrame", {
+            Size = UDim2.new(0, 116, 1, -24),
+            Position = UDim2.fromOffset(0, 24),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = Color3.fromRGB(110, 110, 110),
+            ScrollBarImageTransparency = 0.3,
+            ZIndex = 71,
+            Parent = windowFrame,
+        })
+        create("UIListLayout", {
+            Padding = UDim.new(0, 1),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = windowRail,
+        })
+        create("UIPadding", {
+            PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4),
+            PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+            Parent = windowRail,
+        })
+        windowContent = create("Frame", {
+            Size = UDim2.new(1, -117, 1, -26),
+            Position = UDim2.fromOffset(117, 25),
+            BackgroundTransparency = 1,
+            ZIndex = 71,
+            Parent = windowFrame,
+        })
+        -- the shared search box moves into the rail (top slot)
+        placeSearchInWindow()
+    end
+
+    local function selectCategory(ref)
+        selectedRef = ref
+        for r, page in pairs(catPages) do
+            page.Visible = (r == ref)
+        end
+        for r, rb in pairs(railButtons) do
+            local active = (r == ref)
+            rb.text.TextColor3 = active and THEME.AQUA or THEME.TEXT_DIM
+            rb.btn.BackgroundTransparency = active and 0.4 or 1
+        end
+    end
+    selectCategoryFn = selectCategory
+
+    local function adoptCategory(cat, name, ref)
+        ensureWindow()
+        local page = catPages[ref]
+        if not page then
+            page = create("ScrollingFrame", {
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                CanvasSize = UDim2.new(0, 0, 0, 0),
+                ScrollBarThickness = 4,
+                ScrollBarImageColor3 = Color3.fromRGB(110, 110, 110),
+                ScrollBarImageTransparency = 0.2,
+                Visible = false,
+                ZIndex = 71,
+                Parent = windowContent,
+            })
+            create("UIListLayout", {
+                Padding = UDim.new(0, 1),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Parent = page,
+            })
+            create("UIPadding", {
+                PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2),
+                PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2),
+                Parent = page,
+            })
+            catPages[ref] = page
+            railOrder = railOrder + 1
+            local btn = create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundColor3 = THEME.ROW_HOVER,
+                BackgroundTransparency = 1,
+                Text = "",
+                AutoButtonColor = false,
+                LayoutOrder = railOrder,
+                ZIndex = 72,
+                Parent = windowRail,
+            })
+            local txt = label(btn, name, 12, THEME.TEXT_DIM, {
+                Size = UDim2.new(1, -12, 1, 0),
+                Position = UDim2.fromOffset(6, 0),
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                ZIndex = 73,
+                Parent = btn,
+            })
+            btn.MouseEnter:Connect(function()
+                if selectedRef ~= ref then
+                    tween(btn, 0.1, { BackgroundTransparency = THEME.ROW_HOVER_T })
+                end
+            end)
+            btn.MouseLeave:Connect(function()
+                if selectedRef ~= ref then
+                    tween(btn, 0.1, { BackgroundTransparency = 1 })
+                end
+            end)
+            btn.MouseButton1Click:Connect(function()
+                selectCategory(ref)
+            end)
+            railButtons[ref] = { btn = btn, text = txt }
+        end
+        ref.items.Parent = page
+        ref.items.Size = UDim2.new(1, 0, 1, 0)
+        ref.items.Position = UDim2.fromOffset(0, 0)
+        ref.items.ZIndex = 71
+        if ref.setPage then ref.setPage(page) end
+        ref.panel.Visible = false
+        mainRef.panel.Visible = false
+        if not selectedRef then selectCategory(ref) end
+    end
+
+    local function releaseCategory(ref)
+        local page = catPages[ref]
+        if not page then return end
+        if ref.setPage then ref.setPage(nil) end
+        ref.items.Parent = ref.panel
+        ref.items.Position = UDim2.fromOffset(0, 22)
+        ref.items.ZIndex = 61
+        if ref.update then ref.update() end
+        ref.panel.Visible = true
+        if selectedRef == ref then
+            selectedRef = nil
+            for r, p in pairs(catPages) do p.Visible = false end
+        end
+    end
+
+    local function setMode(m)
+        m = (m == "window") and "window" or "panels"
+        mode = m
+        if mode == "window" then
+            ensureWindow()
+            placeSearchInWindow()
+            for _, cat in ipairs(searchCats) do
+                local ref = cat.panelRef
+                if ref then
+                    -- adoptCategory is idempotent: existing tab chrome is
+                    -- reused, the item list is re-parented into its page on
+                    -- every switch (releaseCategory moved it back out)
+                    local nm = ref.panel.Name:gsub("^HavocCat_", "")
+                    adoptCategory(cat, nm, ref)
+                end
+            end
+            mainRef.panel.Visible = false
+            windowFrame.Visible = true
+        else
+            for ref in pairs(catPages) do
+                releaseCategory(ref)
+            end
+            if searchBox then
+                searchBox.Parent = mainRef.items
+                searchBox.LayoutOrder = -1
+                searchBox.Size = UDim2.new(1, 0, 0, 20)
+            end
+            mainRef.panel.Visible = true
+            if windowFrame then windowFrame.Visible = false end
+        end
+        return mode
+    end
+
     function W.category(name, opts2)
         opts2 = opts2 or {}
         index = index + 1
@@ -2480,6 +2767,9 @@ function HavocUI.makeClickGui(opts)
         addVisibilityRow(name, ref.panel)
         local cat = { panelRef = ref, entries = {}, groups = {} }
         searchCats[#searchCats + 1] = cat
+        if mode == "window" then
+            adoptCategory(cat, name, ref)
+        end
         local api = makeBuilders(cat, ref.items, nil)
         api.panel = ref.panel
         api.header = ref.header
@@ -2488,15 +2778,29 @@ function HavocUI.makeClickGui(opts)
         return api
     end
 
-    -- manager handle (all panels act as one menu)
+    -- manager handle (all panels act as one menu; window mode swaps the
+    -- detached panels for one tabbed window - everything else is shared)
     W.setScale = function(s)
         local v = math.clamp(tonumber(s) or 1, 0.6, 1.6)
         curScale = v
         for _, ref in ipairs(panelRefs) do
             ref.uiScale.Scale = v
         end
+        if windowScale then windowScale.Scale = v end
     end
     W.getScale = function() return curScale end
+    -- UI mode: "panels" | "window" - live-switches the same registry
+    W.setMode = setMode
+    W.getMode = function() return mode end
+    -- the full window frame (window mode) - exposed for position saving
+    W.getWindow = function() return windowFrame end
+    -- window title (title bar) - independent of the HUD watermark
+    W.setTitle = function(t)
+        if type(t) == "string" and t ~= "" then
+            windowTitleText = t
+            if windowTitle then windowTitle.Text = t end
+        end
+    end
     -- attach a hover note to any row frame (see the hover-notes section)
     W.addNote = attachNote
     -- re-seat every panel on its slot (use after setScale so nothing overlaps)
@@ -2507,15 +2811,26 @@ function HavocUI.makeClickGui(opts)
         end
     end
     W.show = function()
-        for _, ref in ipairs(panelRefs) do ref.panel.Visible = true end
+        if mode == "window" then
+            setWindowVisible(true)
+        else
+            for _, ref in ipairs(panelRefs) do ref.panel.Visible = true end
+        end
     end
     W.hide = function()
-        for _, ref in ipairs(panelRefs) do ref.panel.Visible = false end
+        if mode == "window" then
+            setWindowVisible(false)
+        else
+            for _, ref in ipairs(panelRefs) do ref.panel.Visible = false end
+        end
     end
     W.toggle = function()
         if W.isVisible() then W.hide() else W.show() end
     end
     W.isVisible = function()
+        if mode == "window" then
+            return windowFrame ~= nil and windowFrame.Visible
+        end
         local first = panelRefs[1]
         return first ~= nil and first.panel.Visible
     end
@@ -2526,6 +2841,7 @@ function HavocUI.makeClickGui(opts)
         end
         table.clear(tickers)
         table.clear(searchCats)
+        if windowFrame then pcall(function() windowFrame:Destroy() end) end
         for _, ref in ipairs(panelRefs) do
             pcall(function() ref.panel:Destroy() end)
         end
